@@ -2,7 +2,7 @@
 Exploring meteorology data for use in hydrologic modeling of the Skagit River basin
 
 # Setup
-This repo relies on conda environments - I recommend (miniforge)[https://github.com/conda-forge/miniforge]. I also fast explored/protoyped herbie and other hrrr data in jupyter/ipython notebooks. 
+This repo relies on conda environments - I recommend [miniforge](https://github.com/conda-forge/miniforge). I also fast explored/protoyped herbie and other hrrr data in jupyter/ipython notebooks. 
 
 My setup installs jupyter in my base conda environment, then runs notebooks in the sub-envirionment kernels. You can do the same with:
 
