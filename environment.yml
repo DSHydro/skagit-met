@@ -6,4 +6,6 @@ dependencies:
   - herbie-data
   - ipykernel
   - cartopy
+  - wgrib2
+  - geojson
 prefix: ./env
