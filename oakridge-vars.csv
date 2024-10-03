@@ -1,0 +1,22 @@
+Field Name,Units,Data type,Description
+time,days,double,days since 1980-01-01
+lon,degrees_east,double,longitude coordinate
+lat,degrees_north,double,latitude coordinate
+tmax,degrees C,float,daily maximum temperature
+tmin,degrees C,float,daily minimum temperature
+prcp,mm/day,float,precipitation
+wind,m/s,float,wind speed
+runoff,mm/day,float,total runoff (baseflow + surface runoff)
+runoffs,mm/day,float,surface runoff
+runoffb,mm/day,float,baseflow
+swe,mm,float,snow water equivalent
+evap,mm/day,float,evapotranspiration
+pet,mm/day,float,potential evaporation
+soilm,mm,float,soil moisture
+rhum,%,float,relative humidity
+qair,kg/kg,float,specific humidity
+srad,W/m2,float,shortwave radiation
+lrad,W/m2,float,longwave radiation
+vp,Pa,float,near surface vapor pressure
+vpd,Pa,float,near surface vapor pressure deficit
+pres,Pa,float,near surface atmospheric pressure
