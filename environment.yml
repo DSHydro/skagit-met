@@ -26,6 +26,7 @@ dependencies:
   - virtualizarr
   - xoak
   - numba
+  - elevation
   - pip:
       - metloom
       - folium
