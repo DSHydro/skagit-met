@@ -1,16 +1,16 @@
 import pyPRISMClimate
 import rioxarray as rxr
 import xarray as xr
-import contextily as ctx
 import os
 import glob
 import geopandas as gpd
 import pandas as pd
-import matplotlib.pyplot as plt
 from datetime import datetime as dt
 from concurrent.futures import ThreadPoolExecutor
 import pathlib  # Python >= 3.4
+import dask as dask
 import argparse
+import time
 
 DEFAULT_PARAMS = ['tmean', 'tmax', 'tmin', 'ppt', 'vpdmax', 'vpdmin']
 # Parse command arguments from script run in the command line
@@ -44,9 +44,9 @@ def create_prism_dataset(min_date: str, max_date: str, dest_path: str, boundarie
     
     # Collect Individual Variable Data arrays
     rasters = []
-    l = pyPRISMClimate.utils.prism_iterator('../data/weather_data/')
+    nc_files = pyPRISMClimate.utils.prism_iterator('../data/weather_data/')
 
-    for f in l:
+    for f in nc_files:
        # open weather file and clip to watershed boundaries
         raster = rxr.open_rasterio(f['full_path'], masked=True)
         raster = raster.rio.clip(boundaries_gdf.to_crs(raster.rio.crs).geometry)
@@ -84,20 +84,37 @@ if __name__ == "__main__":
     if output_dir[-1] == '/':
         output_dir = output_dir[:-1]
     
-    # Download Up to 6 vars at a time
+    # Download Up to 2 vars at a time
     # FTP Client blocks if try to download too many days at once
+    # Adding a delay between downloads to avoid getting blocked by the FTP server
+    def download_with_backoff(var, min_date, max_date, dest_path):
+        max_retries = 5
+        delay = 1
+        for attempt in range(max_retries):
+            try:
+                pyPRISMClimate.get_prism_dailys(
+                    var,
+                    min_date=min_date,
+                    max_date=max_date,
+                    dest_path=dest_path,
+                    keep_zip=False
+                )
+                break
+            except Exception as e:
+                print(f"Attempt {attempt + 1} failed: {e}")
+                time.sleep(delay)
+                delay *= 2  # Exponential backoff
+        else:
+            print(f"Failed to download {var} after {max_retries} attempts")
+
     start_time = dt.now()
-    with ThreadPoolExecutor(6) as executor:
-        executor.map(
-            lambda var: pyPRISMClimate.get_prism_dailys(
-                var,
-                min_date=dates[0].strftime("%Y-%m-%d"),
-                max_date=dates[-1].strftime("%Y-%m-%d"),
-                dest_path=output_dir,
-                keep_zip=False
-            ),
-            parameters
-        )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(download_with_backoff, var, dates[0].strftime("%Y-%m-%d"), dates[-1].strftime("%Y-%m-%d"), output_dir)
+            for var in parameters
+        ]
+        for future in futures:
+            future.result()  # Wait for all downloads to complete
     end_time = dt.now()
 
     print('Time to download {} days: {} seconds'.format(len(dates), (end_time - start_time).seconds))

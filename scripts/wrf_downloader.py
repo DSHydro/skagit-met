@@ -1,14 +1,12 @@
 import pandas as pd
 import geopandas as gpd
 import xarray as xr
-import numpy as np
+import dask as dask
 import argparse
 import os
 import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
-import os
-import xcdat as xc
 from datetime import datetime as dt
 from concurrent.futures import ThreadPoolExecutor
 from shapely import vectorized
@@ -84,7 +82,7 @@ def downloadMetadataFile(domain: int, output_dir: str, coord: bool = False) -> s
     s3.download_file(BUCKET_NAME, s3_path, output_file)
     return output_file
 
-def getLatLonHgtFromMetadata(metadata_file: str) -> (xr.DataArray, xr.DataArray):
+def getLatLonHgtFromMetadata(metadata_file: str) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
     data = xr.open_dataset(metadata_file)
     lat = data.variables["XLAT"]
     lon = data.variables["XLONG"]
@@ -129,7 +127,7 @@ def cleanUpFiles(files:list) -> None:
 def write_to_zarr(dataset:xr.Dataset, output_dir: str, path:str) -> None:
     if output_dir[-1] == '/':
         output_dir = output_dir[:-1]
-
+    
     dataset.to_zarr(output_dir + '/' + path, mode='w')
 
 if __name__ == "__main__":

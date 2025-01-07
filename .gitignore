@@ -5,3 +5,5 @@
 *.egg-info
 .DS_Store
 .gitattributes
+.vscode
+data/weather_data

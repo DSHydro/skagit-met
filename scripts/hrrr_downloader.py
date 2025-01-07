@@ -4,7 +4,7 @@ import geopandas as gpd
 import pandas as pd
 import xarray as xr
 import numpy as np
-import dask.array as da
+import dask as dask
 import cfgrib
 import argparse
 import os

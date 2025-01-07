@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 import pandas as pd
 import pathlib
 from datetime import datetime as dt
-import dask
+import dask as dask
 import geopandas as gpd
 import os
 import glob
@@ -13,11 +13,14 @@ import argparse
 
 GLOBUS_ROOT = 'https://g-e320e6.63720f.75bc.data.globus.org/gen101/world-shared/doi-data/OLCF/202402/10.13139_OLCF_2311812'
 DEFAULT_PARAMS = ['prcp', 'tmax', 'tmin', 'wind', 'rhum', 'srad', 'lrad']
-DEFAULT_SIM = 'DaymetV4'
+DEFAULT_REF_SIM = 'DaymetV4'
 DEFAULT_HYDRO = 'VIC4'
 DEFAULT_SKAGIT_GEOJSON = 'data/GIS/SkagitBoundary.json'
 DEFAULT_OUTPUT_PATH = 'data/weather_data/'
-
+DEFAULT_GCM = 'CNRM-ESM2-1'
+DEFAULT_CLIMATE_SCENARIO = 'ssp585'
+DEFAULT_ENSEMBLE_ID = 'r1i1p1f2'
+DEFAULT_DOWNSCALING_METHOD = 'DBCCA'
 
 # Parse command arguments from script run in the command line
 def setupArgs() -> None:
@@ -43,20 +46,41 @@ def setupArgs() -> None:
                         type=str,
                         help='Path to/name of geo_json file that geogrpahically limits the downloaded data')
     parser.add_argument('--reference', 
-                        default=DEFAULT_SIM,
+                        default=DEFAULT_REF_SIM,
                         type=str,
                         help='Reference meteorological observations to use e.g. DaymetV4 or Livneh')
     parser.add_argument('--hydroModel', 
                         default=DEFAULT_HYDRO,
                         type=str,
                         help='Hydro model to use e.g. VIC4 (currently only one supported)')
+    parser.add_argument('--gcm', 
+                        default=DEFAULT_GCM,
+                        type=str,
+                        help='Global climate model to use e.g. ACCESS-CM2, CNRM-ESM-1, etc')
+    parser.add_argument('--climateScenario', 
+                        default=DEFAULT_CLIMATE_SCENARIO,
+                        type=str,
+                        help='Climate scenario to use e.g. ssp585, ssp245, etc')
+    parser.add_argument('--ensembleId', 
+                        default=DEFAULT_ENSEMBLE_ID,
+                        type=str,
+                        help='This is the unique CMIP6 ensemble ID of each GCM simualtion, e.g. r1i1p1f2 for CNRM-ESM2-1')
+    parser.add_argument('--downscalingMethod', 
+                        default=DEFAULT_DOWNSCALING_METHOD,
+                        type=str,
+                        help='Downscaling method used to downscale GCM data to 4KM resolution, e.g. DBCCA')
     return parser.parse_args()
 
-def generate_file_names(met_data: str, hydro_model:str, variables:list, start_year: str, end_year: str) -> list:
+def generate_file_names(met_data: str, hydro_model:str, variables:list, start_year: str, end_year: str, gcm: str, climate_scenario:str, ensemble_id:str, downscaling_method:str) -> list:
     files = []
     for variable in variables:
         for y in pd.date_range(start_year, end_year, freq='YS'):
-            file_path = f'{met_data}/{variable}/{met_data}_{hydro_model}_{variable}_{y.year}.nc'
+            if y.year < 2019:
+                file_path = f'{met_data}/{variable}/{met_data}_{hydro_model}_{variable}_{y.year}.nc'
+            else:
+                if met_data == 'DaymetV4':
+                    met_data = 'Daymet'
+                file_path = f'{gcm}_{climate_scenario}_{ensemble_id}_{downscaling_method}_{met_data}/{variable}/{gcm}_{climate_scenario}_{ensemble_id}_{downscaling_method}_{met_data}_{hydro_model}_{variable}_{y.year}.nc'
             url = f'{GLOBUS_ROOT}/{file_path}'
             files.append(url)
     return files
@@ -72,9 +96,9 @@ def create_ornl_dataset(start_year: str, end_year: str, dest_path: str, geojson:
     # Collect Individual Variable Data arrays
     rasters = []
     mask = gpd.read_file(geojson)
-    l = glob.iglob(os.path.join('/tmp/fsspec_cache/', '*.nc'))
+    nc_files = glob.iglob(os.path.join('/tmp/fsspec_cache/', '*.nc'))
 
-    for f in l:
+    for f in nc_files:
         # open weather file and clip to watershed boundaries
         raster = rxr.open_rasterio(f, masked=True)
         raster = raster.rio.write_crs(mask.crs)
@@ -108,9 +132,9 @@ if __name__ == "__main__":
     if output_dir[-1] == '/':
         output_dir = output_dir[:-1]
 
-    files = generate_file_names(args.reference, args.hydroModel, parameters, args.startYear, args.endYear)
+    files = generate_file_names(args.reference, args.hydroModel, parameters, args.startYear, args.endYear, args.gcm, args.climateScenario, args.ensembleId, args.downscalingMethod)
     start_time = dt.now()
-    with ThreadPoolExecutor(max_workers=None) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(pull_from_globus, file) for file in files]
         wait(futures, 60)
 
@@ -119,7 +143,7 @@ if __name__ == "__main__":
         for f in futures:
             try:
                 downloaded_files.append(f.result())
-            except:
+            except Exception:
                 pass
 
         return downloaded_files
