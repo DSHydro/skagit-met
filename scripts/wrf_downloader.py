@@ -1,3 +1,4 @@
+import boto3.exceptions
 import pandas as pd
 import geopandas as gpd
 import xarray as xr
@@ -7,12 +8,18 @@ import os
 import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
+from botocore.exceptions import ClientError
 from datetime import datetime as dt
 from concurrent.futures import ThreadPoolExecutor
 from shapely import vectorized
 
 BUCKET_NAME = 'wrf-cmip6-noversioning'
-s3 = boto3.client('s3', config=Config(signature_version=UNSIGNED, max_pool_connections=24))
+config = Config(
+    signature_version = UNSIGNED,
+    max_pool_connections = 24,
+    retries = {'mode': 'standard', 'max_attempts': 10}
+)
+s3 = boto3.client('s3', config=config)
 
 # Parse command arguments from script run in the command line
 def setupArgs() -> None:
@@ -70,7 +77,12 @@ def downloadS3File(bucket: str, file: str, output_dir: str) -> str:
     if output_dir[-1] == '/':
         output_dir = output_dir[:-1]
     output_file = "%s/%s_%s.nc" % (output_dir, file.split('/')[2], file.split('/')[-1].replace(':', '-'))
-    s3.download_file(bucket, file, output_file)
+    try:
+        s3.download_file(bucket, file, output_file)
+    except ClientError as e:
+        print(f"Failed to download {file} from S3:  {e.response}")
+        return None
+
     return output_file
 
 def downloadMetadataFile(domain: int, output_dir: str, coord: bool = False) -> str:
@@ -79,7 +91,12 @@ def downloadMetadataFile(domain: int, output_dir: str, coord: bool = False) -> s
     file_name = f'wrfinput_d0{domain}{"_coord.nc" if coord else ""}'
     s3_path = "downscaled_products/wrf_coordinates/%s" % (file_name)
     output_file = "%s/%s" % (output_dir, file_name)
-    s3.download_file(BUCKET_NAME, s3_path, output_file)
+
+    try:
+        s3.download_file(BUCKET_NAME, s3_path, output_file)
+    except ClientError as e:
+        print(f"Failed to download metadata at {file_name} from S3")
+    
     return output_file
 
 def getLatLonHgtFromMetadata(metadata_file: str) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
@@ -135,14 +152,21 @@ if __name__ == "__main__":
     args = setupArgs()
     parameters = parseParameters(args.parameters)
     files_to_download = generateFileNames(args.startDate, args.endDate, args.model, args.dataTier, args.domain, args.historical, args.biasCorrected)
-    
+
     # Download 24 hrs at a time
     start_time = dt.now()
     with ThreadPoolExecutor(24) as executor:
         downloaded_files = list(executor.map(lambda file: downloadS3File(BUCKET_NAME, file, args.outputDir), files_to_download))
     end_time = dt.now()
 
+    failed_files = [f for f in downloaded_files if f is None]
+    downloaded_files = [f for f in downloaded_files if f is not None]
     print('Time to download {} files: {} seconds'.format(len(downloaded_files), (end_time - start_time).seconds))
+    print(f'{len(failed_files)} failed to download')
+
+    if len(downloaded_files) == 0:
+        print('No files downloaded. Exiting...')
+        exit(0)
 
     # Get Metadata File for Lat, Lon
     md_file = downloadMetadataFile(args.domain, args.outputDir)
