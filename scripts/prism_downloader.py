@@ -80,7 +80,7 @@ if __name__ == "__main__":
     # Get Arguments - model, variables, product, date range, and geo_json
     args = setupArgs()
     parameters = parseParameters(args.parameters)
-    dates = pd.date_range(args.startDate, args.endDate, freq='1d', inclusive='right', normalize=True)
+    dates = pd.date_range(args.startDate, args.endDate, freq='1d', inclusive='both', normalize=True)
     output_dir = args.outputDir
     if output_dir[-1] == '/':
         output_dir = output_dir[:-1]
