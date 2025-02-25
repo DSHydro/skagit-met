@@ -12,7 +12,7 @@ hrr = "python scripts/hrrr_downloader.py"
 wrf = "python scripts/wrf_downloader.py"
 prism = "python scripts/prism_downloader.py"
 ornl = "python scripts/ornl_downloader.py"
-
+snotel = "python scripts/snotel_downloader.py"
 
 [dependencies]
 python = "3.10.*"

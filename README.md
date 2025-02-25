@@ -89,6 +89,36 @@ To run:
 3. If using pixi, run `pixi run prism --startDate 2023-01-01 --endDate 2023-01-08 --outputDir data/weather_data/`
 3. For help with parameters, run `python prism_downloader.py -h`
 
+# snotel_downloader script
+This script downloads and formats bulk SNOTEL data using metloom. You can read more about metloom [here](https://metloom.readthedocs.io/en/latest/).
+
+Similar to the the other scripts, it:
+1. Downloads select parameters from SNOTEL archives over a specified date range using metloom, given Snotel site ids or a geojson to specify the boundaries where you want to get snotel sites within. 
+2. Saves the data as a zarr store to be read and manipulated. 
+
+Note that this script doesn't keep the encoded geometries of the snotel sites. If you're interested in getting those, I recommended using a script like this:
+
+```python
+import geopandas as gpd
+
+from metloom.pointdata import SnotelPointData
+from metloom.variables import SnotelVariables
+
+GEOJSON = 'path/to/your/geojson'
+
+if __name__ == '__main__':
+    geometry = gpd.read_file(GEOJSON)
+    points = SnotelPointData.points_from_geometry(geometry, [SnotelVariables.PRECIPITATION])
+    points.to_dataframe().to_file('path/to/output/snotel_points.json', driver='GeoJSON')
+
+```
+
+to save your points file as a geojson and just using geopnadas for handling that.
+
+To run:
+1. Using pixi: `pixi run snotel --frequency daily --startDate 2023-01-01 --endDate 2023-01-08 --outputDir data/weather_data/`
+2. For help with parameters, run `pixi run snotel_downloader.py -h`
+
 # Another Environment:
 * [Cryocloud](https://book.cryointhecloud.com/content/Getting_Started.html): Built-in environment to access and manipulate data.
 
