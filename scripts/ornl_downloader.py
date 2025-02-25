@@ -86,7 +86,7 @@ def generate_file_names(met_data: str, hydro_model:str, variables:list, start_ye
     return files
     
 def pull_from_globus(url: str) -> str:
-    local_path = fsspec.open_local(f"filecache::{url}", filecache={'cache_storage': '/tmp/fsspec_cache'}, same_names=True)
+    local_path = fsspec.open_local(f"simplecache::{url}", simplecache={'cache_storage': '/tmp/fsspec_cache'}, same_names=True)
     return local_path
 
 def create_ornl_dataset(start_year: str, end_year: str, dest_path: str, geojson: str) -> xr.Dataset:
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     start_time = dt.now()
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(pull_from_globus, file) for file in files]
-        wait(futures, 60)
+        # wait(futures, 60)
 
     def downloaded_files(futures: list) -> list:
         downloaded_files = []

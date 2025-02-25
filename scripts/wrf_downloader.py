@@ -69,7 +69,10 @@ def setupArgs() -> None:
 def generateFileNames(start_date: str, end_date: str, model: str, data_tier: int, domain: int, historical: bool, bias_correction: bool) -> list[str]:
     r = pd.date_range(start_date, end_date, freq='1h', inclusive='both', normalize=True)
     file_prefix = {1: "wrfout", 2: "auxhist"}
-    path = f'downscaled_products/gcm/{model}{"_historical" if historical else ""}{"_bc" if bias_correction else ""}/hourly'
+    path_prefix = "downscaled_products/gcm"
+    if model.startswith("era5"):
+        path_prefix = "downscaled_products/reanalysis"
+    path = f'{path_prefix}/{model}{"_historical" if historical else ""}{"_bc" if bias_correction else ""}/hourly'
     # Gross check since files start sept 1 in each yearly directory
     return ["%s/%s/d0%s/%s_d01_%s" % (path, d.year if d.month > 9 else d.year - 1, domain, file_prefix[data_tier], pd.to_datetime(d).strftime('%Y-%m-%d_%H:%M:%S')) for d in r]
 
