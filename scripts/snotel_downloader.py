@@ -95,7 +95,11 @@ def getGeometryData(geojson: str, frequency: str, start: datetime, end: datetime
     return createDataset(dfs, frequency, var_strs)
     
 def createDataset(dataframes: list[gpd.GeoDataFrame], frequency: str, var_strs: list[str]) -> xr.Dataset:
-    snotel_df = pd.concat(dataframes)
+    try:
+        snotel_df = pd.concat(dataframes)
+    except ValueError:
+        print('No variable data found for the given stations on given dates. Exiting...')
+        exit(0)
     # Sort by date:
     snotel_df.sort_index(level=0, inplace=True)
     # Convert to xarray dataset and make sure in correct datetime format
@@ -107,6 +111,8 @@ def createDataset(dataframes: list[gpd.GeoDataFrame], frequency: str, var_strs: 
     snotel_xr = snotel_xr.assign_coords(site=snotel_xr.site.astype(str))
     snotel_xr = snotel_xr.assign_coords(datetime=pd.to_datetime(snotel_xr.datetime))
     snotel_xr = snotel_xr.rename({'datetime': 'time'})
+    # Clean up issue here where some variables are not in the data
+    var_strs = [var for var in var_strs if var in snotel_xr]
     snotel_xr = snotel_xr[var_strs]
     return snotel_xr
 
@@ -160,7 +166,4 @@ if __name__ == '__main__':
     writeToZarr(xr, output_dir, args.startDate, args.endDate, args.frequency)
     endTime = datetime.now()
     print('Time to download: {} seconds'.format((endTime - startTime).seconds))
-
-
-
-
+    
