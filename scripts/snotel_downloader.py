@@ -6,6 +6,7 @@ from metloom.variables import SnotelVariables
 import argparse
 import xarray as xr
 from pathlib import Path
+import requests
 
 DEFAULT_SNOTEL_VARS = [SnotelPointData.ALLOWED_VARIABLES.SNOWDEPTH,
             SnotelPointData.ALLOWED_VARIABLES.SWE,
@@ -111,18 +112,54 @@ def createDataset(dataframes: list[gpd.GeoDataFrame], frequency: str, var_strs: 
     snotel_xr = snotel_xr.assign_coords(site=snotel_xr.site.astype(str))
     snotel_xr = snotel_xr.assign_coords(datetime=pd.to_datetime(snotel_xr.datetime))
     snotel_xr = snotel_xr.rename({'datetime': 'time'})
+
+    print(snotel_df.index)
+    # Ensure 'site' column exists
+    if 'site' not in snotel_df.columns:
+        snotel_df['site'] = snotel_df.index.get_level_values('site')
+
+    # Do the same for site name
+    if 'site_name' not in snotel_df.columns:
+        snotel_df['site_name'] = snotel_df.index.get_level_values('site_name')
+        
+    # Extract coordinates from the geometry column
+    snotel_df['lat'] = snotel_df.geometry.apply(lambda geom: geom.y)
+    snotel_df['lon'] = snotel_df.geometry.apply(lambda geom: geom.x)
+    snotel_df['elevation_ft'] = snotel_df.geometry.apply(lambda geom: geom.z)
+    
+    # Filter snotel_df to only include sites that exist in snotel_xr
+    snotel_df = snotel_df[snotel_df['site'].isin(snotel_xr.site.values)]
+    
+    # Assign new coordinates to the xarray dataset
+    # Ensure unique 'site' values
+    snotel_df = snotel_df.drop_duplicates(subset='site')
+    # Same for site_name
+    snotel_df = snotel_df.drop_duplicates(subset='site_name')
+    
+    snotel_xr = snotel_xr.assign_coords(
+        lat=('site', snotel_df['lat'].values),
+        lon=('site', snotel_df['lon'].values),
+        elevation_ft=('site', snotel_df['elevation_ft'].values),
+        site_name=('site', snotel_df['site_name'].values)
+    )
     # Clean up issue here where some variables are not in the data
     var_strs = [var for var in var_strs if var in snotel_xr]
     snotel_xr = snotel_xr[var_strs]
     return snotel_xr
 
 def getDataByFrequency(point: SnotelPointData, frequency: str, start: datetime, end: datetime, variables: list[SnotelVariables]) -> pd.DataFrame:
-    if frequency == 'hourly':
-        return point.get_hourly_data(start, end, variables=variables)
-    elif frequency == 'daily':
-        return point.get_daily_data(start, end, variables=variables)
-    else:
-        raise ValueError('Frequency must be either daily or hourly')
+    try:
+        if frequency == 'hourly':
+            df = point.get_hourly_data(start, end, variables=variables)
+        elif frequency == 'daily':
+            df = point.get_daily_data(start, end, variables=variables)
+        else:
+            raise ValueError('Frequency must be either daily or hourly')
+        df['site_name'] = point.name
+        return df
+    except requests.exceptions.HTTPError as e:
+        print(f'Error downloading data for {point.station_id}. Skipping...')
+        return pd.DataFrame()
     
 def writeToZarr(ds: xr.Dataset, output_dir: str, startDate: str, endDate: str, frequency: str) -> None:
     #Output Zarr
