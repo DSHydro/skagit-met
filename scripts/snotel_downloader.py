@@ -148,13 +148,19 @@ def createDataset(dataframes: list[gpd.GeoDataFrame], frequency: str, var_strs: 
 
 def getDataByFrequency(point: SnotelPointData, frequency: str, start: datetime, end: datetime, variables: list[SnotelVariables]) -> pd.DataFrame:
     try:
+        df = pd.DataFrame()
         if frequency == 'hourly':
             df = point.get_hourly_data(start, end, variables=variables)
         elif frequency == 'daily':
             df = point.get_daily_data(start, end, variables=variables)
         else:
             raise ValueError('Frequency must be either daily or hourly')
-        df['site_name'] = point.name
+        
+        if df is None or df.empty:
+            print(f'No {frequency} data found for {point.name}. Skipping...')
+            return pd.DataFrame()
+        else:
+            df['site_name'] = point.name
         return df
     except requests.exceptions.HTTPError as e:
         print(f'Error downloading data for {point.station_id}. Skipping...')
