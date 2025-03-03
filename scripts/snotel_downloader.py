@@ -113,7 +113,6 @@ def createDataset(dataframes: list[gpd.GeoDataFrame], frequency: str, var_strs: 
     snotel_xr = snotel_xr.assign_coords(datetime=pd.to_datetime(snotel_xr.datetime))
     snotel_xr = snotel_xr.rename({'datetime': 'time'})
 
-    print(snotel_df.index)
     # Ensure 'site' column exists
     if 'site' not in snotel_df.columns:
         snotel_df['site'] = snotel_df.index.get_level_values('site')
