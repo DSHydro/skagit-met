@@ -118,7 +118,7 @@ def getLatLonHgtFromMetadata(metadata_file: str) -> tuple[xr.DataArray, xr.DataA
     return (lat_wrf, lon_wrf, hgt_wrf)
 
 def formatWrfArray(wrf_data: xr.Dataset, lat: xr.DataArray, lon: xr.DataArray, hgt: xr.DataArray, parameters_to_keep: list[str]) -> xr.Dataset:
-    wrf_data = wrf_data.assign_coords(lat=lat, lon=lon).assign(HGT=hgt).rename({'south_north': 'y', 'west_east': 'x'})
+    wrf_data = wrf_data.assign_coords(lat=lat, lon=lon, hgt=hgt).rename({'south_north': 'y', 'west_east': 'x'})
     time_strs = wrf_data['Times'].astype(str)
     time_strs = [t.replace("_", " ") for t in time_strs.values]
     dts = pd.to_datetime(time_strs).floor('h')
