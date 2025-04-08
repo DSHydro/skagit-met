@@ -37,9 +37,9 @@ geopandas = ">=0.9.0,<1.0.0"
 numpy = "*"
 rioxarray = "*"
 fsspec = "*"
+libgdal-netcdf = ">=3.10.2,<4"
 
 [feature.data-download.pypi-dependencies]
-pyprismclimate = "*"
 metloom = "*"
 
 [feature.analysis.dependencies]
