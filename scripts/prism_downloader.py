@@ -29,8 +29,10 @@ def setupArgs() -> None:
                                      Uses the prism Webservice -- https://prism.oregonstate.edu/documents/PRISM_downloads_web_service.pdf''')
     parser.add_argument('--parameters', 
                         type=str,
-                        default='',
-                        help='Comma seperated string containing the variables that will be downloaded - these are PRISM output vars and defaults to all')
+                        default=DEFAULT_PARAMS,
+                        choices=DEFAULT_PARAMS,
+                        nargs='+',
+                        help='the variables that will be downloaded - these are PRISM output vars and defaults to all')
     parser.add_argument('--startDate', 
                         type=str,
                         required=True,
@@ -84,8 +86,8 @@ def create_prism_dataset(min_date: str, max_date: str, dest_path: str, boundarie
     for zip_path in zip_paths:
         with ZipFile(zip_path, 'r') as zip_ref:
             nc_file = [f for f in zip_ref.namelist() if f.endswith('.nc')][0]
-            zip_ref.extract(nc_file, path=output_dir)
-            full_path = os.path.join(output_dir, nc_file)
+            zip_ref.extract(nc_file, path=dest_path)
+            full_path = os.path.join(dest_path, nc_file)
             variable = os.path.basename(nc_file).split('_')[1]
             date = os.path.basename(nc_file).split('_')[4].split('.')[0]
             nc_files.append({'full_path': full_path, 'variable': variable, 'date': date})
@@ -117,17 +119,6 @@ def create_prism_dataset(min_date: str, max_date: str, dest_path: str, boundarie
     
     return weather_dataset
 
-def parseParameters(paramString: str) -> list[str]:
-    param_list = paramString.split(',')
-    if not param_list[0]:
-        return DEFAULT_PARAMS
-    
-    for param in param_list:
-        if param not in DEFAULT_PARAMS:
-            raise ValueError(f"Invalid parameter: {param}. Must be one of {DEFAULT_PARAMS}")
-    
-    return param_list
-
 def parseDateRange(startDateString: str, endDateString: str,  frequency: str) -> pd.DatetimeIndex:
     if frequency == 'daily':
         start_date = dt.strptime(startDateString, "%Y-%m-%d")
@@ -144,8 +135,6 @@ def parseDateRange(startDateString: str, endDateString: str,  frequency: str) ->
         end_date = dt.strptime(endDateString, "%Y")
         freq = '1Y'
         date_range = pd.date_range(start_date, end_date, freq=freq ,normalize=True).strftime('%Y')
-    else:
-        raise ValueError(f"Invalid frequency: {frequency}. Must be one of {FREQUENCY_OPTIONS}")
     
     if start_date > end_date:
         raise ValueError(f"Start date {start_date} must be before end date {end_date}")
@@ -158,7 +147,7 @@ def clean_up_files(files: list) -> None:
 if __name__ == "__main__":
     # Get Arguments - model, variables, product, date range, and geo_json
     args = setupArgs()
-    parameters = parseParameters(args.parameters)
+    parameters = args.parameters
     dates = parseDateRange(args.startDate, args.endDate, args.frequency)
     output_dir = args.outputDir
     if output_dir[-1] == '/':
@@ -179,7 +168,7 @@ if __name__ == "__main__":
                         zip_file.write(chunk)
             return zip_file_path
         except Exception as e:
-            print(f"Failed to download for {var} failed ")
+            print(f"Failed to download for {var}")
 
 
     start_time = dt.now()
