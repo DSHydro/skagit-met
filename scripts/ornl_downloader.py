@@ -97,6 +97,7 @@ def create_ornl_dataset(start_year: str, end_year: str, dest_path: str, geojson:
     rasters = []
     mask = gpd.read_file(geojson)
     nc_files = glob.iglob(os.path.join('/tmp/fsspec_cache/', '*.nc'))
+    weather_dataset = None
 
     for f in nc_files:
         # open weather file and clip to watershed boundaries
@@ -136,14 +137,15 @@ if __name__ == "__main__":
     start_time = dt.now()
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(pull_from_globus, file) for file in files]
-        # wait(futures, 60)
+        wait(futures)
 
     def downloaded_files(futures: list) -> list:
         downloaded_files = []
         for f in futures:
             try:
                 downloaded_files.append(f.result())
-            except Exception:
+            except Exception as e:
+                print(f"Error downloading file: {f}, exception: {e}")
                 pass
 
         return downloaded_files

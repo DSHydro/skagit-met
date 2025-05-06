@@ -38,6 +38,11 @@ numpy = "*"
 rioxarray = "*"
 fsspec = "*"
 libgdal-netcdf = ">=3.10.2,<4"
+requests = ">=2.32.3,<3"
+aiohttp = ">=3.11.18,<4"
+
+[feature.data-download.target.osx-arm64.dependencies]
+libgfortran5 = ">=14"
 
 [feature.data-download.pypi-dependencies]
 metloom = "*"
@@ -68,8 +73,14 @@ kerchunk = "*"
 fastparquet = "*"
 holoviews = "*"
 hvplot = "*"
+pandas = "*"
 geoviews = ">=1.14.0,<2"
 pint-xarray = ">=0.4,<0.5"
+pygmt = ">=0.15.0,<0.16"
+jupyter_bokeh = ">=4.0.5,<5"
+
+[feature.analysis.target.osx-arm64.dependencies]
+libgfortran5 = ">=14"
 
 [feature.analysis.pypi-dependencies]
 xarray-regrid = ">=0.4.0, <0.5"
