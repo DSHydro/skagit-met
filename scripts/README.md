@@ -1,5 +1,8 @@
 # Data download scripts
 
+All these scripts are desgined to be run from the command line, and can be run using the `pixi` command if you have it installed, or directly with python. They all take a date range and a geojson polygon boundary to subset the data to the Skagit River basin.
+
+
 ## hrrr_downloader.py
 To download bulk data, we have a python module/script that can be run.
 
@@ -31,7 +34,7 @@ To run:
 1. Activate the conda environment in the root of this repo (see setup above) or have pixi installed
 2. Run from the command line using the following command - be sure to adjust the dates and parameters as needed - `python wrf_downloader.py --model cesm2_r11i1p1f1_ssp245 --startDate 2023-01-01 --endDate 2023-01-08`
 3. If using pixi, run `pixi run wrf --model cesm2_r11i1p1f1_ssp245 --startDate 2023-01-01 --endDate 2023-01-08 --outputDir data/weather_data/`
-3. For help with parameters, run pixi run wrf_downloader.py -h`
+3. For help with parameters, run `pixi run wrf_downloader -h`
 
 ## prism_downloader.py
 This script downloads and formats bulk, downscaled PRISM output data from the [PRISM archives](https://www.prism.oregonstate.edu/). You can read more about the data [here](https://www.prism.oregonstate.edu/documents/PRISM_datasets.pdf).
@@ -45,8 +48,8 @@ Similar to the the other scripts, it:
 To run:
 1. Activate the conda environment in the root of this repo (see setup above) or have pixi installed
 2. Run from the command line using the following command - be sure to adjust the dates and parameters as needed - `python prism_downloader.py --startDate 2023-01-01 --endDate 2023-01-08 --outputDir data/weather_data/`
-3. If using pixi, run `pixi run prism --startDate 2023-01-01 --endDate 2023-01-08 --outputDir data/weather_data/`
-3. For help with parameters, run `pixi run prism_downloader.py -h`
+3. If using pixi, run `pixi r prism --startDate 2011-01-01 --endDate 2011-02-01 --outputDir data/weather_data/ --geojson data/GIS/SkagitRiver_BasinBoundary.json --resolution 800m`
+3. For help with parameters, run `pixi run prism_downloader -h`
 
 ## snotel_downloader.py
 This script downloads and formats bulk SNOTEL data using metloom. You can read more about metloom [here](https://metloom.readthedocs.io/en/latest/).
@@ -57,4 +60,14 @@ Similar to the the other scripts, it:
 
 To run:
 1. Using pixi: `pixi run snotel --frequency daily --startDate 2023-01-01 --endDate 2023-01-08 --outputDir data/weather_data/`
-2. For help with parameters, run `pixi run snotel_downloader.py -h`
+2. For help with parameters, run `pixi run snotel_downloader -h`
+
+## ornl_downloader.py
+This script downloads and formats bulk Oak Ridge National Laboratory data using the [ORNL hydrosource](https://hydrosource.ornl.gov/data/datasets/9505v3_1/).
+
+Similar to the the other scripts, it:
+1. Downloads select parameters from ORNL archives over a specified date range using and saves the data as a zarr store to be read and manipulated.
+
+To run:
+1. Using pixi: ` pixi run ornl --startYear 2013 --endYear 2013 --reference DaymetV4 --outputDir data/weather_data --geojson data/GIS/SkagitRiver_BasinBoundary.json --parameters prcp`
+2. For help with parameters, run `pixi run ornl -h`

@@ -8,7 +8,7 @@ This repository hosts code to construct analysis ready data cubes for the Skagit
 |Dataset          |Spatial Resolution     |Range/Availability|Data Granularity|Temperature|Precipitation|Wind Speed            |Relative Humidity         |Long Wave Radiation|Short Wave Radiation|
 |-----------------|-----------------------|------------------|----------------|-----------|-------------|----------------------|--------------------------|-------------------|--------------------|
 |[HRRRv4](https://rapidrefresh.noaa.gov/hrrr/)             |3 km                   |2014 - present    |Hourly          |✔️         |✔️           |✔️                    |✔️                        |✔️                 |✔️                  |
-|[PRISM](https://www.prism.oregonstate.edu/)            |4 km                   |1981 - present    |Daily           |✔️         |✔️           |X                     |Via Vapor Pressure Deficit|X                  |X                   |
+|[PRISM](https://www.prism.oregonstate.edu/)            |4 km or 800 m                   |1981 - present    |Daily           |✔️         |✔️           |X                     |Via Vapor Pressure Deficit|X                  |X                   |
 |[UCLA CMIP-6 (WRF)](https://dept.atmos.ucla.edu/alexhall/downscaling-cmip6)|9 km                   |1980 - 2100       |Hourly          |✔️         |✔️           |Via U and V components|Via Specific Humidity     |✔️                 |✔️                  |
 |[ORNL](https://hydrosource.ornl.gov/data/datasets/9505v3_1/)             |4 km                   |1980-2040         |Daily           |✔️         |✔️           |✔️                    |✔️                        |✔️                 |✔️                  |
 |[SNOTEL](https://metloom.readthedocs.io/en/latest/)           |Point Data (9 stations)|2010 - present    |Hourly          |✔️         |✔️           |X                     |X                         |X                  |X                   |
@@ -31,7 +31,7 @@ To play around with the jupyter notebooks, just run `pixi run nb`, and a local i
 1. Run `curl -fsSL https://pixi.sh/install.sh | bash` to install pixi for your user
 2. Install the data-download environment or analysis environment using `pixi install -e download-data` and `pixi install -e analysis`
 3. To look at the analysis notebook, install the analysis kernel with the following command: `./skagit-met/.pixi/envs/analysis/bin/python3 -m ipykernel install --user --name=skagit_analysis`
-4. Once installed, open the Viz.ipynb file, and select the skagit_analyis kernel.
+4. Once installed, open the .ipynb file you wish to look at, and select the skagit_analyis kernel.
 
 ### Cloud-hosted JupyterHub:
 
