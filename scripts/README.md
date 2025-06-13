@@ -48,7 +48,7 @@ Similar to the the other scripts, it:
 To run:
 1. Activate the conda environment in the root of this repo (see setup above) or have pixi installed
 2. Run from the command line using the following command - be sure to adjust the dates and parameters as needed - `python prism_downloader.py --startDate 2023-01-01 --endDate 2023-01-08 --outputDir data/weather_data/`
-3. If using pixi, run `pixi r prism --startDate 2011-01-01 --endDate 2011-02-01 --outputDir data/weather_data/ --geojson data/GIS/SkagitRiver_BasinBoundary.json --resolution 800m`
+3. If using pixi, run `pixi r prism --startDate 2011-01-01 --endDate 2011-02-01 --outputDir data/weather_data/ --geojson data/GIS/SkagitBoundary.json --resolution 800m`
 3. For help with parameters, run `pixi run prism_downloader -h`
 
 ## snotel_downloader.py
@@ -69,5 +69,5 @@ Similar to the the other scripts, it:
 1. Downloads select parameters from ORNL archives over a specified date range using and saves the data as a zarr store to be read and manipulated.
 
 To run:
-1. Using pixi: ` pixi run ornl --startYear 2013 --endYear 2013 --reference DaymetV4 --outputDir data/weather_data --geojson data/GIS/SkagitRiver_BasinBoundary.json --parameters prcp`
+1. Using pixi: ` pixi run ornl --startYear 2013 --endYear 2013 --reference DaymetV4 --outputDir data/weather_data --geojson data/GIS/SkagitBoundary.json --parameters prcp`
 2. For help with parameters, run `pixi run ornl -h`

@@ -37,7 +37,7 @@ def setupArgs() -> None:
                         required=True,
                         help='End date of data to download e.g. 2020-10-01 for October 1, 2020')
     parser.add_argument('--geoJson', 
-                        default='data/GIS/SkagitRiver_BasinBoundary.json',
+                        default='data/GIS/SkagitBoundary.json',
                         type=str,
                         required=False,
                         help='Path to/name of geo_json file that geogrpahically limits the downloaded data')

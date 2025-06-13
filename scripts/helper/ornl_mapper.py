@@ -4,7 +4,7 @@ GLOBUS_ROOT = 'https://hydrosource2.ornl.gov/files/SWA9505V3'
 DEFAULT_VARIABLES = ['prcp', 'tmax', 'tmin', 'wind', 'rhum', 'srad', 'lrad']
 DEFAULT_REF_SIM = 'DaymetV4'
 DEFAULT_HYDRO = 'VIC4'
-DEFAULT_SKAGIT_GEOJSON = 'data/GIS/SkagitRiver_BasinBoundary.json'
+DEFAULT_SKAGIT_GEOJSON = 'data/GIS/SkagitBoundary.json'
 DEFAULT_OUTPUT_PATH = 'data/weather_data/'
 
 ALLOWED_HYDRO_MODELS = ['VIC4']

@@ -61,7 +61,7 @@ def setupArgs() -> None:
                         type=str,
                         help='Directory/path to download data/output zarr to.')
     parser.add_argument('--geojson', 
-                        default='data/GIS/SkagitRiver_BasinBoundary.json',
+                        default='data/GIS/SkagitBoundary.json',
                         type=str,
                         help='Path to/name of geo_json file that geogrpahically limits the downloaded data')
     return parser.parse_args()
