@@ -1,5 +1,5 @@
 from herbie import Herbie, FastHerbie, wgrib2
-from shapely import vectorized
+import shapely
 import geopandas as gpd
 import pandas as pd
 import xarray as xr
@@ -79,7 +79,7 @@ def cleanUpFiles(subsetFiles:list) -> None:
 
 def maskDataset(ds: xr.Dataset, mask_file: str) -> xr.Dataset:
     mask_shape = gpd.read_file(mask_file)
-    mask = vectorized.contains(mask_shape.geometry[0], ds.longitude.values, ds.latitude.values)
+    mask = shapely.contains_xy(mask_shape.geometry[0], ds.longitude.values, ds.latitude.values)
     masked_data_set = ds.where(mask)
 
     return masked_data_set
@@ -90,7 +90,7 @@ def mergeDatasets(regionSubsetGribFiles: list) -> xr.Dataset:
     # if f001, grab just the accumlated precip by dropping the other forecast variables
     dropVarsStep = dropVars + ["t", "r2", "si10", "sdswrf", "sdlwrf"]
     for f in regionSubsetGribFiles:
-        unMergedDatasets = cfgrib.open_datasets(f, indexpath='')
+        unMergedDatasets = cfgrib.open_datasets(f, indexpath='', decode_timedelta=False)
         mergedDataset = xr.merge([ds.drop_vars(dropVarsStep, errors="ignore") if ds.step.values == np.timedelta64(1, 'h') else ds.drop_vars(dropVars, errors="ignore") for ds in unMergedDatasets])
         mergedDataset.load()
         datasets.append(mergedDataset)
@@ -100,7 +100,7 @@ def mergeDatasets(regionSubsetGribFiles: list) -> xr.Dataset:
 
     tp_ds = xr.concat(tp_f001, dim='time')
     other_ds = xr.concat(other_vars, dim='time')
-    combined_ds = xr.combine_by_coords([tp_ds, other_ds])
+    combined_ds = xr.combine_by_coords([tp_ds, other_ds], compat='override')
     # Set Longitude to be in correct space
     combined_ds['longitude'] = combined_ds.longitude-360
 

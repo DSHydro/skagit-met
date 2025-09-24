@@ -12,6 +12,8 @@ wrf = "python scripts/wrf_downloader.py"
 prism = "python scripts/prism_downloader.py"
 ornl = "python scripts/ornl_downloader.py"
 snotel = "python scripts/snotel_downloader.py"
+# Same as notebooks/HRRR_Downloader.py
+hrrr-test = "python scripts/hrrr_downloader.py --parameters 'TMP:surface,RH:2 m above ground,WIND:10 m above ground,APCP:surface:0-1 hour acc fcst,DSWRF:surface,DLWRF:surface' --startDate 2020-03-01 --endDate 2020-03-02"
 
 [feature.analysis.tasks]
 nb = "jupyter lab"
@@ -40,6 +42,8 @@ fsspec = "*"
 libgdal-netcdf = ">=3.10.2,<4"
 requests = ">=2.32.3,<3"
 aiohttp = ">=3.11.18,<4"
+# To use demo notebooks
+ipykernel = "*"
 
 [feature.data-download.target.osx-arm64.dependencies]
 libgfortran5 = ">=14"
