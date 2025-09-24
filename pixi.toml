@@ -21,6 +21,13 @@ nb = "jupyter lab"
 [environments]
 data-download = {features = ["data-download"], no-default-feature = true}
 analysis = ["analysis"]
+dev = ["dev"]
+
+[feature.dev.dependencies]
+ruff = "*"
+
+[feature.dev.tasks]
+lint = "ruff check ./ --fix ; ruff format"
 
 [feature.data-download.dependencies]
 python = "3.10.*"
