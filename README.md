@@ -13,6 +13,7 @@ This repository hosts code to construct analysis ready data cubes for the Skagit
 |[ORNL](https://hydrosource.ornl.gov/data/datasets/9505v3_1/)             |4 km                   |1980-2040         |Daily           |✔️         |✔️           |✔️                    |✔️                        |✔️                 |✔️                  |
 |[SNOTEL](https://metloom.readthedocs.io/en/latest/)           |Point Data (9 stations)|2010 - present    |Hourly          |✔️         |✔️           |X                     |X                         |X                  |X                   |
 |PNNL*            |6 km                   |1981 - 2020       |Hourly          |✔️         |✔️           |Via U and V components|Via Specific Humidity     |✔️                 |✔️                  |
+|CONUS404 (HyTest)            |4 km                   |2014 - 2020       |Hourly/Daily         |✔️         |✔️           |✔️ |✔️      |✔️                 |✔️                  |
 
 *This is a private experimental dataset hosted at the Pacific Northwest National Laboratory
 
