@@ -15,12 +15,16 @@ snotel = "python scripts/snotel_downloader.py"
 # Same as notebooks/HRRR_Downloader.py
 hrrr-test = "python scripts/hrrr_downloader.py --parameters 'TMP:surface,RH:2 m above ground,WIND:10 m above ground,APCP:surface:0-1 hour acc fcst,DSWRF:surface,DLWRF:surface' --startDate 2020-03-01 --endDate 2020-03-02"
 
+[feature.dev.tasks]
+lint = "ruff check --fix ./scripts ; ruff format ./scripts"
+
 [feature.analysis.tasks]
 nb = "jupyter lab"
 
 [environments]
 data-download = {features = ["data-download"], no-default-feature = true}
-analysis = ["analysis"]
+analysis = {features = ["analysis"], no-default-feature = true}
+dev = {features = ["dev"], no-default-feature = true}
 
 [feature.data-download.dependencies]
 python = "3.10.*"
@@ -93,3 +97,6 @@ libgfortran5 = ">=14"
 xarray-regrid = ">=0.4.0, <0.5"
 
 [pypi-dependencies]
+
+[feature.dev.dependencies]
+ruff = ">=0.14.1,<0.15"

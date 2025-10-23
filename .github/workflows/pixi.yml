@@ -23,6 +23,6 @@ jobs:
           cache: true
           frozen: true
 
-      - name: Download HRRR
+      - name: Tests download scripts
         run: |
-          pixi run hrrr-test
+          pixi run test-all-downloads
