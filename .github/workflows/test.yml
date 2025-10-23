@@ -25,12 +25,27 @@ jobs:
           cache: true
           frozen: true
 
-      - name: Tests download scripts
+      - name: Test HRRR Download
         run: |
-          pixi run test-all-downloads
+          pixi run hrrr-test
+
+      - name: Test WRF Download
+        run: |
+          pixi run wrf-test
+
+      - name: Test ORNL Download
+        run: |
+          pixi run ornl-test
+
+      - name: Test PRISM Download
+        run: |
+          pixi run prism-test
+
+      - name: Test SNOTEL Download
+        run: |
+          pixi run snotel-test
 
       - name: Inspect download directory
         run: |
           du -sh data/weather_data/*
 
-    
