@@ -1,4 +1,4 @@
-[project]
+[workspace]
 authors = ["Jesse Akes <akesjesse@gmail.com>"]
 channels = ["conda-forge"]
 description = "Analysis of Meterological data in the Skagit River Basin"
@@ -12,15 +12,33 @@ wrf = "python scripts/wrf_downloader.py"
 prism = "python scripts/prism_downloader.py"
 ornl = "python scripts/ornl_downloader.py"
 snotel = "python scripts/snotel_downloader.py"
-# Same as notebooks/HRRR_Downloader.py
+
+# Minimal downloads for testing
 hrrr-test = "python scripts/hrrr_downloader.py --parameters 'TMP:surface,RH:2 m above ground,WIND:10 m above ground,APCP:surface:0-1 hour acc fcst,DSWRF:surface,DLWRF:surface' --startDate 2020-03-01 --endDate 2020-03-02"
+wrf-test = "python scripts/wrf_downloader.py --model era5 --startDate 2020-03-01 --endDate 2020-03-02"
+# currently ORNL script does 1 year at a time
+ornl-test = "python scripts/ornl_downloader.py --startYear 2023 --endYear 2023 --parameters prcp --gcm CNRM-ESM2-1 --climateScenario ssp585 --downscalingMethod DBCCA"
+prism-test = "python scripts/prism_downloader.py --startDate 2020-03-01 --endDate 2020-03-02"
+snotel-test = "python scripts/snotel_downloader.py --startDate 2020-03-01 --endDate 2020-03-05 --variables PRECIPITATION --frequency daily"
+
+test-all-downloads = [{ task = "hrrr-test" }, { task = "wrf-test" }, { task = "prism-test" }, { task = "ornl-test" }, { task = "snotel-test" }]
+
+# Getting atmospheric river ranges
+hrrr-2021 = "python scripts/hrrr_downloader.py --parameters 'TMP:surface,RH:2 m above ground,WIND:10 m above ground,APCP:surface:0-1 hour acc fcst,DSWRF:surface,DLWRF:surface' --startDate 2021-11-10 --endDate 2021-11-17"
+wrf-2021 = "pixi run wrf --startDate 2021-11-10 --endDate 2021-11-17"
+prism-2021 = "python scripts/prism_downloader.py --startDate 2021-11-10 --endDate 2021-11-17"
+
+
+[feature.dev.tasks]
+lint = "ruff check --fix ./scripts ; ruff format ./scripts"
 
 [feature.analysis.tasks]
 nb = "jupyter lab"
 
 [environments]
 data-download = {features = ["data-download"], no-default-feature = true}
-analysis = ["analysis"]
+analysis = {features = ["analysis"], no-default-feature = true}
+dev = {features = ["dev"], no-default-feature = true}
 
 [feature.data-download.dependencies]
 python = "3.10.*"
@@ -93,3 +111,6 @@ libgfortran5 = ">=14"
 xarray-regrid = ">=0.4.0, <0.5"
 
 [pypi-dependencies]
+
+[feature.dev.dependencies]
+ruff = ">=0.14.1,<0.15"
