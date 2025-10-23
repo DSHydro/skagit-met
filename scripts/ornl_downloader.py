@@ -10,6 +10,7 @@ import os
 import glob
 import argparse
 import helper.ornl_mapper as mapper
+import time
 
 
 # Parse command arguments from script run in the command line
@@ -168,24 +169,24 @@ if __name__ == "__main__":
   )
   print(files)
 
-
   start_time = dt.now()
+
   def submit_with_retry(executor, func, url, max_retries=3, delay=4):
-        for attempt in range(max_retries):
-            try:
-                future = executor.submit(func, url)
-                return future
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    print(f"Retry {attempt + 1} for {url} after {delay} seconds due to: {e}")
-                    time.sleep(delay)
-                else:
-                    print(f"Failed to submit {url} after {max_retries} attempts")
-                    raise
-    
+    for attempt in range(max_retries):
+      try:
+        future = executor.submit(func, url)
+        return future
+      except Exception as e:
+        if attempt < max_retries - 1:
+          print(f"Retry {attempt + 1} for {url} after {delay} seconds due to: {e}")
+          time.sleep(delay)
+        else:
+          print(f"Failed to submit {url} after {max_retries} attempts")
+          raise
+
   with ThreadPoolExecutor(max_workers=None) as executor:
-        futures = [submit_with_retry(executor, pull_from_globus, file) for file in files]
-        wait(futures)
+    futures = [submit_with_retry(executor, pull_from_globus, file) for file in files]
+    wait(futures)
 
   def downloaded_files(futures: list) -> list:
     downloaded_files = []

@@ -1,7 +1,7 @@
 import pandas as pd
 
-#GLOBUS_ROOT = "https://hydrosource2.ornl.gov/files/SWA9505V3"
-GLOBUS_ROOT="https://g-e320e6.63720f.75bc.data.globus.org/gen101/world-shared/doi-data/OLCF/202402/10.13139_OLCF_2311812"
+# GLOBUS_ROOT = "https://hydrosource2.ornl.gov/files/SWA9505V3"
+GLOBUS_ROOT = "https://g-e320e6.63720f.75bc.data.globus.org/gen101/world-shared/doi-data/OLCF/202402/10.13139_OLCF_2311812"
 DEFAULT_VARIABLES = ["prcp", "tmax", "tmin", "wind", "rhum", "srad", "lrad"]
 DEFAULT_REF_SIM = "DaymetV4"
 DEFAULT_HYDRO = "VIC4"
