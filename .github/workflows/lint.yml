@@ -5,12 +5,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: astral-sh/ruff-action@v2
+      - uses: astral-sh/ruff-action@v3
         with:
           args: check
           src: "./scripts"
           
-      - uses: astral-sh/ruff-action@v2
+      - uses: astral-sh/ruff-action@v3
         with:
           args: format
           src: "./scripts"
