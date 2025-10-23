@@ -12,8 +12,21 @@ wrf = "python scripts/wrf_downloader.py"
 prism = "python scripts/prism_downloader.py"
 ornl = "python scripts/ornl_downloader.py"
 snotel = "python scripts/snotel_downloader.py"
-# Same as notebooks/HRRR_Downloader.py
+
+# Single day downloads for testing
 hrrr-test = "python scripts/hrrr_downloader.py --parameters 'TMP:surface,RH:2 m above ground,WIND:10 m above ground,APCP:surface:0-1 hour acc fcst,DSWRF:surface,DLWRF:surface' --startDate 2020-03-01 --endDate 2020-03-02"
+wrf-test = "python scripts/wrf_downloader.py --model era5 --startDate 2020-03-01 --endDate 2020-03-02"
+prism-test = "python scripts/prism_downloader.py --startDate 2020-03-01 --endDate 2020-03-02"
+ornl-test = "python scripts/ornl_downloader.py --startDate 2020-03-01 --endDate 2020-03-02"
+snotel-test = "python scripts/snotel_downloader.py --startDate 2020-03-01 --endDate 2020-03-02"
+
+test-all-downloads = [{ task = "hrrr-test" }, { task = "wrf-test" }, { task = "prism-test" }, { task = "ornl-test" }, { task = "snotel-test" }]
+
+# Getting atmospheric river ranges
+hrrr-2021 = "python scripts/hrrr_downloader.py --parameters 'TMP:surface,RH:2 m above ground,WIND:10 m above ground,APCP:surface:0-1 hour acc fcst,DSWRF:surface,DLWRF:surface' --startDate 2021-11-10 --endDate 2021-11-17"
+wrf-2021 = "pixi run wrf --startDate 2021-11-10 --endDate 2021-11-17"
+prism-2021 = "python scripts/prism_downloader.py --startDate 2021-11-10 --endDate 2021-11-17"
+
 
 [feature.dev.tasks]
 lint = "ruff check --fix ./scripts ; ruff format ./scripts"

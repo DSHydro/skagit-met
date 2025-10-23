@@ -11,7 +11,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 from datetime import datetime as dt
 from concurrent.futures import ThreadPoolExecutor
-from shapely import vectorized
+import shapely
 
 BUCKET_NAME = "wrf-cmip6-noversioning"
 config = Config(
@@ -187,7 +187,7 @@ def formatWrfArray(
 
 def geoMaskWrfArray(wrf_array: xr.Dataset, gejson_path: str) -> xr.Dataset:
   boundary = gpd.read_file(gejson_path)
-  mask = vectorized.contains(boundary.geometry[0], wrf_array.lon.values, wrf_array.lat.values)
+  mask = shapely.contains_xy(boundary.geometry[0], wrf_array.lon.values, wrf_array.lat.values)
 
   return wrf_array.where(mask)
 
