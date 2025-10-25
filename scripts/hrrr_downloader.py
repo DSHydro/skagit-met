@@ -10,13 +10,6 @@ import xarray as xr
 import numpy as np
 import dask as dask
 import cfgrib
-
-try:
-    from pyproj import datadir
-    if os.path.exists(PROJ_DIR):
-        datadir.set_data_dir(PROJ_DIR)
-except Exception:
-    pass
     
 # Parse command arguments from script run in the command line
 def setupArgs() -> None:
