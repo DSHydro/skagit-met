@@ -1,18 +1,8 @@
-import os, sys
-PROJ_DIR = os.environ.get("PROJ_LIB")  or os.path.join(sys.prefix, "share", "proj")
-GDAL_DIR = os.environ.get("GDAL_DATA") or os.path.join(sys.prefix, "share", "gdal")
-os.environ["PROJ_LIB"] = PROJ_DIR
-os.environ["GDAL_DATA"] = GDAL_DIR
-os.environ.setdefault("PROJ_NETWORK", "ON")
-try:
-    from pyproj import datadir
-    if os.path.exists(PROJ_DIR):
-        datadir.set_data_dir(PROJ_DIR)
-except Exception:
-    pass
-    
+import os
+import argparse
+import sys
 
-from herbie import Herbie, FastHerbie, wgrib2
+from herbie import FastHerbie, wgrib2
 import shapely
 import geopandas as gpd
 import pandas as pd
@@ -20,9 +10,14 @@ import xarray as xr
 import numpy as np
 import dask as dask
 import cfgrib
-import argparse
-import os
 
+try:
+    from pyproj import datadir
+    if os.path.exists(PROJ_DIR):
+        datadir.set_data_dir(PROJ_DIR)
+except Exception:
+    pass
+    
 # Parse command arguments from script run in the command line
 def setupArgs() -> None:
     parser = argparse.ArgumentParser(description='Download HRRR data using Herbie, and segment to a specific geographic region')
@@ -41,12 +36,12 @@ def setupArgs() -> None:
                         required=True,
                         help='Comma seperated tring containing the variables and level of the vars that will be downloaded e.g. TMP:surface,RH:2 m above ground')
     parser.add_argument('--startDate', 
-                        default='2014-01-01',
+                        default='2020-01-01',
                         type=str,
                         required=True,
                         help='Start date of data to download e.g. 2020-10-01 for October 1, 2020')
     parser.add_argument('--endDate', 
-                        default='2020-12-31',
+                        default='2020-01-02',
                         type=str,
                         required=True,
                         help='End date of data to download e.g. 2020-10-01 for October 1, 2020')
