@@ -1,3 +1,4 @@
+from math import comb
 from herbie import Herbie, FastHerbie, wgrib2
 import shapely
 import geopandas as gpd
@@ -131,9 +132,14 @@ def mergeDatasets(regionSubsetGribFiles: list) -> xr.Dataset:
   tp_ds = xr.concat(tp_f001, dim="time")
   other_ds = xr.concat(other_vars, dim="time")
   combined_ds = xr.combine_by_coords([tp_ds, other_ds], compat="override")
-  # Set Longitude to be in correct space
-  combined_ds["longitude"] = combined_ds.longitude - 360
 
+  # Wrap longitude values from 0-360 to -180 to 180
+  combined_ds["longitude"] = (combined_ds["longitude"] + 180) % 360 - 180
+  combined_ds["longitude"].attrs = {
+      "units": "degrees_west",
+      "standard_name": "longitude",
+      "long_name": "longitude",
+  }
   return combined_ds
 
 
