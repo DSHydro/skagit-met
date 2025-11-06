@@ -135,7 +135,7 @@ def mergeDatasets(regionSubsetGribFiles: list) -> xr.Dataset:
   # Wrap longitude values from 0-360 to -180 to 180
   combined_ds["longitude"] = (combined_ds["longitude"] + 180) % 360 - 180
   combined_ds["longitude"].attrs = {
-    "units": "degrees_west",
+    "units": "degrees_east",
     "standard_name": "longitude",
     "long_name": "longitude",
   }
