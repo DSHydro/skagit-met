@@ -1,3 +1,14 @@
+import os, sys
+from pyproj import datadir
+
+os.environ.setdefault("PROJ_LIB",  os.path.join(sys.prefix, "share", "proj"))
+os.environ.setdefault("GDAL_DATA", os.path.join(sys.prefix, "share", "gdal"))
+datadir.set_data_dir(os.environ["PROJ_LIB"])  # ensure pyproj sees proj.db
+
+import geopandas as gpd
+gpd.options.io_engine = "fiona"
+os.environ["GEOPANDAS_USE_PYOGRIO"] = "0"
+
 import rioxarray as rxr
 import xarray as xr
 import os
@@ -11,6 +22,8 @@ from zipfile import ZipFile
 import pathlib  # Python >= 3.4
 import dask as dask
 import argparse
+
+
 
 BASE_URL = 'https://services.nacse.org/prism/data/get'
 # Format options, we need 
@@ -76,47 +89,79 @@ def setupArgs() -> None:
 
     return parser.parse_args()
 
-def create_prism_dataset(min_date: str, max_date: str, dest_path: str, boundaries_gdf: gpd.GeoDataFrame, zip_paths: list[str], frequency: str, resolution: str) -> xr.Dataset:
-    #Output Zarr
-    output_file = "%s/%s_%s_%s_%s_PRISM_data.zarr" % (dest_path, min_date, max_date, frequency, resolution)
-    
-    # Collect Individual Variable Data arrays
+def create_prism_dataset(min_date: str, max_date: str, dest_path: str,
+                         boundaries_gdf: gpd.GeoDataFrame,
+                         data_paths: list[str], frequency: str, resolution: str) -> xr.Dataset:
+    output_file = f"{dest_path}/{min_date}_{max_date}_{frequency}_{resolution}_PRISM_data.zarr"
+
     rasters = []
     nc_files = []
-    for zip_path in zip_paths:
-        with ZipFile(zip_path, 'r') as zip_ref:
-            nc_file = [f for f in zip_ref.namelist() if f.endswith('.nc')][0]
-            zip_ref.extract(nc_file, path=dest_path)
-            full_path = os.path.join(dest_path, nc_file)
-            variable = os.path.basename(nc_file).split('_')[1]
-            date = os.path.basename(nc_file).split('_')[4].split('.')[0]
-            nc_files.append({'full_path': full_path, 'variable': variable, 'date': date})
+
+    # Build a normalized list of NetCDF file entries
+    for p in filter(None, data_paths):
+        if p.endswith(".zip"):
+            with ZipFile(p, "r") as zf:
+                nc_in_zip = [f for f in zf.namelist() if f.endswith(".nc")]
+                if not nc_in_zip:
+                    continue
+                member = nc_in_zip[0]
+                zf.extract(member, path=dest_path)
+                nc_path = os.path.join(dest_path, member)
+        else:
+            nc_path = p
+
+        fname = os.path.basename(nc_path)
+        parts = fname.split("_")
+        try:
+            variable = parts[1]
+            date_part = parts[4].split(".")[0] if len(parts) > 4 else parts[-1].split(".")[0]
+        except Exception:
+            variable = "var"
+            date_part = "".join([c for c in fname if c.isdigit()])[:8]
+
+        nc_files.append({"full_path": nc_path, "variable": variable, "date": date_part})
 
     for f in nc_files:
-       # open weather file and clip to watershed boundaries
-        raster = rxr.open_rasterio(f['full_path'], masked=True)
-        raster = raster.rio.clip(boundaries_gdf.to_crs(raster.rio.crs).geometry)
-    
-        # get date from filename and add as a time coordinate
-        # if frequency is daily, date is in YYYYMMDD format, else YYYYMM
-        # if frequency is annual, date is in YYYY format
-        if frequency == 'daily':
-            date = dt.strptime(f['date'], "%Y%m%d")
-        elif frequency == 'monthly':
-            date = dt.strptime(f['date'], "%Y%m")
-        elif frequency == 'annual':
-            date = dt.strptime(f['date'], "%Y")
-        raster = raster.expand_dims(dim='time')
-        raster.coords['time'] = ('time',[date])
-        raster = raster.drop_vars(['spatial_ref']).sel(band=1).drop_vars(['band']).rename(f['variable']).rename({'x':'lon', 'y':'lat'})
-        raster.drop_attrs()
-    
-        #add timestamp to list
-        rasters.append(raster)
-        
+        # Prefer xarray for NetCDF, then prepare for clip with rioxarray
+        ds = xr.open_dataset(f["full_path"], engine="netcdf4")
+
+        # Drop metadata-only variables that cause CRS issues
+        ds = ds.drop_vars(["crs", "spatial_ref"], errors="ignore")
+
+        # Select the actual data variable
+        var_name = f["variable"] if f["variable"] in ds.data_vars else list(ds.data_vars)[0]
+        da = ds[var_name]
+
+        # Add a time coordinate
+        if frequency == "daily":
+            date = dt.strptime(f["date"], "%Y%m%d")
+        elif frequency == "monthly":
+            date = dt.strptime(f["date"], "%Y%m")
+        else:
+            date = dt.strptime(f["date"], "%Y")
+
+        da = da.expand_dims(dim="time").assign_coords(time=("time", [date]))
+
+        # Normalize coordinate names
+        rename = {}
+        if "x" in da.dims: rename["x"] = "lon"
+        if "y" in da.dims: rename["y"] = "lat"
+        if "longitude" in da.dims: rename["longitude"] = "lon"
+        if "latitude" in da.dims: rename["latitude"] = "lat"
+        if rename:
+            da = da.rename(rename)
+
+        # Write CRS and set spatial dims only once on proper data var
+        da = da.rio.write_crs("EPSG:4326", inplace=False)
+        da = da.rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=False)
+
+        # Clip with shapefile boundary
+        da = da.rio.clip(boundaries_gdf.to_crs("EPSG:4326").geometry)
+
+        rasters.append(da.rename(f["variable"]))
+
     weather_dataset = xr.merge(rasters)
-    weather_dataset.to_zarr(output_file, mode='w')
-    
+    weather_dataset.to_zarr(output_file, mode="w")
     return weather_dataset
 
 def parseDateRange(startDateString: str, endDateString: str,  frequency: str) -> pd.DatetimeIndex:
@@ -159,16 +204,30 @@ if __name__ == "__main__":
     query_params = {'format': args.format}
 
     def download(var, date, output_dir) -> str:
+        url = f"{BASE_URL}/{args.region}/{args.resolution}/{var}/{date}"
         try:
-            zip_file_path = os.path.join(output_dir, f"{var}_{date}_{args.resolution}.zip")
-            with requests.get(BASE_URL + url_params + var + '/' + date, params=query_params) as response:
-                response.raise_for_status()
-                with open(zip_file_path, 'wb') as zip_file:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        zip_file.write(chunk)
-            return zip_file_path
+            r = requests.get(url, params={"format": args.format}, stream=True)
+            r.raise_for_status()
+            ctype = r.headers.get("Content-Type", "").lower()
+    
+            base = os.path.join(output_dir, f"{var}_{date}_{args.resolution}")
+            # If it's a zip, keep .zip; otherwise save whatever it is as .nc
+            if "zip" in ctype:
+                out_path = base + ".zip"
+            else:
+                out_path = base + ".nc"
+    
+            with open(out_path, "wb") as fh:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        fh.write(chunk)
+    
+            print(f"[DOWNLOAD] {url} -> {out_path} ({ctype or 'unknown content-type'})")
+            return out_path
+    
         except Exception as e:
-            print(f"Failed to download for {var}")
+            print(f"[DOWNLOAD-ERROR] {url} -> {e}")
+            return None
 
 
     start_time = dt.now()

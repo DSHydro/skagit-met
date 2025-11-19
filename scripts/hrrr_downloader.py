@@ -10,6 +10,18 @@ import xarray as xr
 import numpy as np
 import dask as dask
 import cfgrib
+
+PROJ_DIR = os.environ.get("PROJ_LIB")  or os.path.join(sys.prefix, "share", "proj")
+GDAL_DIR = os.environ.get("GDAL_DATA") or os.path.join(sys.prefix, "share", "gdal")
+os.environ["PROJ_LIB"] = PROJ_DIR
+os.environ["GDAL_DATA"] = GDAL_DIR
+os.environ.setdefault("PROJ_NETWORK", "ON")
+try:
+    from pyproj import datadir
+    if os.path.exists(PROJ_DIR):
+        datadir.set_data_dir(PROJ_DIR)
+except Exception:
+    pass
     
 # Parse command arguments from script run in the command line
 def setupArgs() -> None:

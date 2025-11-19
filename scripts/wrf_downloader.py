@@ -66,15 +66,20 @@ def setupArgs() -> None:
                         help='Path to/name of geo_json file that geogrpahically limits the downloaded data')
     return parser.parse_args()
 
-def generateFileNames(start_date: str, end_date: str, model: str, data_tier: int, domain: int, historical: bool, bias_correction: bool) -> list[str]:
+def generateFileNames(start_date, end_date, model, data_tier, domain, historical, bias_correction):
     r = pd.date_range(start_date, end_date, freq='1h', inclusive='both', normalize=True)
-    file_prefix = {1: "wrfout", 2: "auxhist"}
-    path_prefix = "downscaled_products/gcm"
-    if model.startswith("era5"):
-        path_prefix = "downscaled_products/reanalysis"
+    file_prefix = {1: "wrfout", 2: "auxhist"}  # tier->filename root
+    path_prefix = "downscaled_products/gcm" if not model.startswith("era5") else "downscaled_products/reanalysis"
     path = f'{path_prefix}/{model}{"_historical" if historical else ""}{"_bc" if bias_correction else ""}/hourly'
-    # Gross check since files start sept 1 in each yearly directory
-    return ["%s/%s/d0%s/%s_d01_%s" % (path, d.year if d.month > 9 else d.year - 1, domain, file_prefix[data_tier], pd.to_datetime(d).strftime('%Y-%m-%d_%H:%M:%S')) for d in r]
+
+    def year_folder(ts):
+        # Directory spans Sep 1 (inclusive) .. Aug 31 (inclusive) named by the *starting* Sep year
+        return ts.year if ts.month >= 9 else ts.year - 1
+
+    return [
+        f"{path}/{year_folder(d)}/d0{domain}/{file_prefix[data_tier]}_d01_{pd.to_datetime(d).strftime('%Y-%m-%d_%H:%M:%S')}"
+        for d in r
+    ]
 
 def downloadS3File(bucket: str, file: str, output_dir: str) -> str:
     if output_dir[-1] == '/':
