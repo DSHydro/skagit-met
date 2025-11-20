@@ -5,6 +5,7 @@ import xarray as xr
 import dask as dask
 import argparse
 import os
+import sys
 import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
@@ -20,6 +21,16 @@ config = Config(
   retries={"mode": "standard", "max_attempts": 10},
 )
 s3 = boto3.client("s3", config=config)
+
+
+def configure_spatial_env(proj_dir: str | None, gdal_dir: str | None) -> None:
+  """Configure PROJ/GDAL env vars so geopandas/shapely work inside Pixi."""
+  if proj_dir:
+    os.environ["PROJ_LIB"] = proj_dir
+  if gdal_dir:
+    os.environ["GDAL_DATA"] = gdal_dir
+  if proj_dir or gdal_dir:
+    os.environ.setdefault("PROJ_NETWORK", "ON")
 
 
 # Parse command arguments from script run in the command line
@@ -84,6 +95,22 @@ def setupArgs() -> None:
     type=str,
     help="Path to/name of geo_json file that geogrpahically limits the downloaded data",
   )
+  default_proj = os.environ.get("PROJ_LIB") or os.path.join(sys.prefix, "share", "proj")
+  default_gdal = os.environ.get("GDAL_DATA") or os.path.join(sys.prefix, "share", "gdal")
+  parser.add_argument(
+    "--projLib",
+    type=str,
+    required=False,
+    default=default_proj,
+    help="Path to the PROJ data directory (sets PROJ_LIB).",
+  )
+  parser.add_argument(
+    "--gdalData",
+    type=str,
+    required=False,
+    default=default_gdal,
+    help="Path to the GDAL data directory (sets GDAL_DATA).",
+  )
   return parser.parse_args()
 
 
@@ -98,20 +125,16 @@ def generateFileNames(
 ) -> list[str]:
   r = pd.date_range(start_date, end_date, freq="1h", inclusive="both", normalize=True)
   file_prefix = {1: "wrfout", 2: "auxhist"}
-  path_prefix = "downscaled_products/gcm"
-  if model.startswith("era5"):
-    path_prefix = "downscaled_products/reanalysis"
+  path_prefix = (
+    "downscaled_products/gcm" if not model.startswith("era5") else "downscaled_products/reanalysis"
+  )
   path = f"{path_prefix}/{model}{'_historical' if historical else ''}{'_bc' if bias_correction else ''}/hourly"
-  # Gross check since files start sept 1 in each yearly directory
+
+  def year_folder(ts):
+    return ts.year if ts.month >= 9 else ts.year - 1
+
   return [
-    "%s/%s/d0%s/%s_d01_%s"
-    % (
-      path,
-      d.year if d.month > 9 else d.year - 1,
-      domain,
-      file_prefix[data_tier],
-      pd.to_datetime(d).strftime("%Y-%m-%d_%H:%M:%S"),
-    )
+    f"{path}/{year_folder(d)}/d0{domain}/{file_prefix[data_tier]}_d01_{pd.to_datetime(d).strftime('%Y-%m-%d_%H:%M:%S')}"
     for d in r
   ]
 
@@ -213,7 +236,10 @@ def write_to_zarr(dataset: xr.Dataset, output_dir: str, path: str) -> None:
 if __name__ == "__main__":
   # Get Arguments - model, variables, product, date range, and geo_json
   args = setupArgs()
+  configure_spatial_env(args.projLib, args.gdalData)
   parameters = parseParameters(args.parameters)
+  output_dir = args.outputDir.rstrip("/")
+  os.makedirs(output_dir, exist_ok=True)
   files_to_download = generateFileNames(
     args.startDate,
     args.endDate,
@@ -229,7 +255,7 @@ if __name__ == "__main__":
   with ThreadPoolExecutor(24) as executor:
     downloaded_files = list(
       executor.map(
-        lambda file: downloadS3File(BUCKET_NAME, file, args.outputDir), files_to_download
+        lambda file: downloadS3File(BUCKET_NAME, file, output_dir), files_to_download
       )
     )
   end_time = dt.now()
@@ -248,7 +274,7 @@ if __name__ == "__main__":
     exit(0)
 
   # Get Metadata File for Lat, Lon
-  md_file = downloadMetadataFile(args.domain, args.outputDir)
+  md_file = downloadMetadataFile(args.domain, output_dir)
   lat, lon, hgt = getLatLonHgtFromMetadata(md_file)
 
   # Format, then geo limit by masking
@@ -259,7 +285,7 @@ if __name__ == "__main__":
   # Write to zarr and cleanup
   write_to_zarr(
     wrf_array_masked,
-    args.outputDir,
+    output_dir,
     args.startDate + "_" + args.endDate + "_wrf_" + args.model + "_data.zarr",
   )
   cleanUpFiles(downloaded_files)
