@@ -238,6 +238,8 @@ if __name__ == "__main__":
   args = setupArgs()
   configure_spatial_env(args.projLib, args.gdalData)
   parameters = parseParameters(args.parameters)
+  output_dir = args.outputDir.rstrip("/")
+  os.makedirs(output_dir, exist_ok=True)
   files_to_download = generateFileNames(
     args.startDate,
     args.endDate,
@@ -253,7 +255,7 @@ if __name__ == "__main__":
   with ThreadPoolExecutor(24) as executor:
     downloaded_files = list(
       executor.map(
-        lambda file: downloadS3File(BUCKET_NAME, file, args.outputDir), files_to_download
+        lambda file: downloadS3File(BUCKET_NAME, file, output_dir), files_to_download
       )
     )
   end_time = dt.now()
@@ -272,7 +274,7 @@ if __name__ == "__main__":
     exit(0)
 
   # Get Metadata File for Lat, Lon
-  md_file = downloadMetadataFile(args.domain, args.outputDir)
+  md_file = downloadMetadataFile(args.domain, output_dir)
   lat, lon, hgt = getLatLonHgtFromMetadata(md_file)
 
   # Format, then geo limit by masking
@@ -283,7 +285,7 @@ if __name__ == "__main__":
   # Write to zarr and cleanup
   write_to_zarr(
     wrf_array_masked,
-    args.outputDir,
+    output_dir,
     args.startDate + "_" + args.endDate + "_wrf_" + args.model + "_data.zarr",
   )
   cleanUpFiles(downloaded_files)
