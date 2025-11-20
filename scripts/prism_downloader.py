@@ -5,6 +5,20 @@ os.environ.setdefault("PROJ_LIB",  os.path.join(sys.prefix, "share", "proj"))
 os.environ.setdefault("GDAL_DATA", os.path.join(sys.prefix, "share", "gdal"))
 datadir.set_data_dir(os.environ["PROJ_LIB"])  # ensure pyproj sees proj.db
 
+
+def configure_spatial_env(proj_dir: str | None, gdal_dir: str | None) -> None:
+    """Update PROJ/GDAL environment variables when overridden via CLI."""
+    if proj_dir:
+        os.environ["PROJ_LIB"] = proj_dir
+        try:
+            datadir.set_data_dir(proj_dir)
+        except Exception:
+            pass
+    if gdal_dir:
+        os.environ["GDAL_DATA"] = gdal_dir
+    if proj_dir or gdal_dir:
+        os.environ.setdefault("PROJ_NETWORK", "ON")
+
 import geopandas as gpd
 gpd.options.io_engine = "fiona"
 os.environ["GEOPANDAS_USE_PYOGRIO"] = "0"
@@ -86,6 +100,18 @@ def setupArgs() -> None:
                         type=bool,
                         default=False,
                         help='Keep the zipped files after download. Default is False')
+    default_proj = os.environ.get("PROJ_LIB") or os.path.join(sys.prefix, "share", "proj")
+    default_gdal = os.environ.get("GDAL_DATA") or os.path.join(sys.prefix, "share", "gdal")
+    parser.add_argument('--projLib',
+                        type=str,
+                        required=False,
+                        default=default_proj,
+                        help='Path to the PROJ data directory (sets PROJ_LIB).')
+    parser.add_argument('--gdalData',
+                        type=str,
+                        required=False,
+                        default=default_gdal,
+                        help='Path to the GDAL data directory (sets GDAL_DATA).')
 
     return parser.parse_args()
 
@@ -192,6 +218,7 @@ def clean_up_files(files: list) -> None:
 if __name__ == "__main__":
     # Get Arguments - model, variables, product, date range, and geo_json
     args = setupArgs()
+    configure_spatial_env(args.projLib, args.gdalData)
     parameters = args.parameters
     dates = parseDateRange(args.startDate, args.endDate, args.frequency)
     output_dir = args.outputDir

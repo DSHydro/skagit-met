@@ -11,17 +11,21 @@ import numpy as np
 import dask as dask
 import cfgrib
 
-PROJ_DIR = os.environ.get("PROJ_LIB")  or os.path.join(sys.prefix, "share", "proj")
-GDAL_DIR = os.environ.get("GDAL_DATA") or os.path.join(sys.prefix, "share", "gdal")
-os.environ["PROJ_LIB"] = PROJ_DIR
-os.environ["GDAL_DATA"] = GDAL_DIR
-os.environ.setdefault("PROJ_NETWORK", "ON")
-try:
-    from pyproj import datadir
-    if os.path.exists(PROJ_DIR):
-        datadir.set_data_dir(PROJ_DIR)
-except Exception:
-    pass
+
+def configure_spatial_env(proj_dir: str | None, gdal_dir: str | None) -> None:
+    """Set PROJ/GDAL environment variables if provided or already available."""
+    if proj_dir:
+        os.environ["PROJ_LIB"] = proj_dir
+    if gdal_dir:
+        os.environ["GDAL_DATA"] = gdal_dir
+    if proj_dir or gdal_dir:
+        os.environ.setdefault("PROJ_NETWORK", "ON")
+    if proj_dir:
+        try:
+            from pyproj import datadir
+            datadir.set_data_dir(proj_dir)
+        except Exception:
+            pass
     
 # Parse command arguments from script run in the command line
 def setupArgs() -> None:
@@ -59,6 +63,18 @@ def setupArgs() -> None:
                         default='../../../data0/balaji24/data/weather_data/',
                         type=str,
                         help='Directory/path to download data/output zarr to.')
+    default_proj = os.environ.get("PROJ_LIB") or os.path.join(sys.prefix, "share", "proj")
+    default_gdal = os.environ.get("GDAL_DATA") or os.path.join(sys.prefix, "share", "gdal")
+    parser.add_argument('--projLib',
+                        type=str,
+                        required=False,
+                        default=default_proj,
+                        help='Path to the PROJ data directory (sets PROJ_LIB).')
+    parser.add_argument('--gdalData',
+                        type=str,
+                        required=False,
+                        default=default_gdal,
+                        help='Path to the GDAL data directory (sets GDAL_DATA).')
     return parser.parse_args()
 
 def getFastHerbie(start_date: str, end_date: str, model: str, product: str, save_dir: str ) -> FastHerbie:
@@ -190,6 +206,7 @@ def iter_months(start: str, end: str):
 
 if __name__ == "__main__":
     args = setupArgs()
+    configure_spatial_env(args.projLib, args.gdalData)
     parameters = parseParameters(args.parameters)
 
     # Read geo bounds once

@@ -1,9 +1,9 @@
-[project]
+[workspace]
 authors = ["Jesse Akes <akesjesse@gmail.com>"]
 channels = ["conda-forge"]
 description = "Analysis of Meterological data in the Skagit River Basin"
 name = "skagit-met"
-platforms = ["linux-64"]
+platforms = ["osx-arm64", "linux-64", "osx-64"]
 version = "0.1.0"
 
 [feature.data-download.tasks]
@@ -12,15 +12,33 @@ wrf = "python scripts/wrf_downloader.py"
 prism = "python scripts/prism_downloader.py"
 ornl = "python scripts/ornl_downloader.py"
 snotel = "python scripts/snotel_downloader.py"
-# Same as notebooks/HRRR_Downloader.py
+
+# Minimal downloads for testing
 hrrr-test = "python scripts/hrrr_downloader.py --parameters 'TMP:surface,RH:2 m above ground,WIND:10 m above ground,APCP:surface:0-1 hour acc fcst,DSWRF:surface,DLWRF:surface' --startDate 2020-03-01 --endDate 2020-03-02"
+wrf-test = "python scripts/wrf_downloader.py --model era5 --startDate 2020-03-01 --endDate 2020-03-02"
+# currently ORNL script does 1 year at a time
+ornl-test = "python scripts/ornl_downloader.py --startYear 2023 --endYear 2023 --parameters prcp --gcm CNRM-ESM2-1 --climateScenario ssp585 --downscalingMethod DBCCA"
+prism-test = "python scripts/prism_downloader.py --startDate 2020-03-01 --endDate 2020-03-02"
+snotel-test = "python scripts/snotel_downloader.py --startDate 2020-03-01 --endDate 2020-03-05 --variables PRECIPITATION --frequency daily"
+
+test-all-downloads = [{ task = "hrrr-test" }, { task = "wrf-test" }, { task = "prism-test" }, { task = "ornl-test" }, { task = "snotel-test" }]
+
+# Getting atmospheric river ranges
+hrrr-2021 = "python scripts/hrrr_downloader.py --parameters 'TMP:surface,RH:2 m above ground,WIND:10 m above ground,APCP:surface:0-1 hour acc fcst,DSWRF:surface,DLWRF:surface' --startDate 2021-11-10 --endDate 2021-11-17"
+wrf-2021 = "pixi run wrf --startDate 2021-11-10 --endDate 2021-11-17"
+prism-2021 = "python scripts/prism_downloader.py --startDate 2021-11-10 --endDate 2021-11-17"
+
+
+[feature.dev.tasks]
+lint = "ruff check --fix ./scripts ; ruff format ./scripts"
 
 [feature.analysis.tasks]
 nb = "jupyter lab"
 
 [environments]
 data-download = {features = ["data-download"], no-default-feature = true}
-analysis = ["analysis"]
+analysis = {features = ["analysis"], no-default-feature = true}
+dev = {features = ["dev"], no-default-feature = true}
 
 [feature.data-download.dependencies]
 python = "3.10.*"
@@ -33,7 +51,7 @@ cfgrib = "*"
 dask = "*"
 flox = "*"
 xarray = "*"
-boto3 = ">=1.40.61,<2"
+boto3 = "*"
 netcdf4 = "*"
 geopandas = ">=0.9.0,<1.0.0"
 numpy = "*"
@@ -85,10 +103,6 @@ jupyter_bokeh = ">=4.0.5,<5"
 ffmpeg = ">=7.1.1,<8"
 pillow = ">=11.2.1,<12"
 libgdal-netcdf = ">=3.10.3,<4"
-gdal = ">=3.10.3,<4"
-proj = ">=9.6.2,<10"
-proj-data = ">=1.23,<2"
-rasterio = ">=1.4.3,<2"
 
 [feature.analysis.target.osx-arm64.dependencies]
 libgfortran5 = ">=14"
@@ -98,44 +112,5 @@ xarray-regrid = ">=0.4.0, <0.5"
 
 [pypi-dependencies]
 
-[dependencies]
-python = "3.11.*"
-pip = ">=25.2,<26"
-xarray = ">=2025.10.1,<2026"
-fsspec = ">=2025.10.0,<2026"
-s3fs = ">=2025.10.0,<2026"
-eccodes = ">=2.41.0,<3"
-cfgrib = ">=0.9.15.1,<0.10"
-wgrib2 = ">=3.1.3,<4"
-pandas = ">=2.3.3,<3"
-numpy = ">=2.3.4,<3"
-requests = ">=2.32.5,<3"
-tqdm = ">=4.67.1,<5"
-shapely = ">=2.1.1,<3"
-geopandas = ">=1.1.1,<2"
-pyproj = ">=3.7.2,<4"
-rtree = ">=1.4.1,<2"
-fiona = ">=1.10.1,<2"
-dask = ">=2025.10.0,<2026"
-netcdf4 = ">=1.7.3,<2"
-h5netcdf = ">=1.7.3,<2"
-proj = ">=9.6.2,<10"
-proj-data = ">=1.23,<2"
-gdal = ">=3.10.3,<4"
-zarr = ">=3.1.3,<4"
-rioxarray = ">=0.19.0,<0.20"
-rasterio = ">=1.4.3,<2"
-libgdal-hdf5 = ">=3.10.3,<4"
-libnetcdf = ">=4.9.3,<5"
-hdf5 = ">=1.14.6,<2"
-h5py = ">=3.15.1,<4"
-cftime = ">=1.6.4,<2"
-ruff = ">=0.14.2,<0.15"
-boto3 = ">=1.40.49,<2"
-regionmask = ">=0.13.0,<0.14"
-intake = ">=2.0.8,<3"
-intake-xarray = ">=2.0.0,<3"
-gcsfs = ">=2025.10.0,<2026"
-intake-parquet = ">=0.3.0,<0.4"
-pyarrow = ">=22.0.0,<23"
-fastparquet = ">=2024.11.0,<2025"
+[feature.dev.dependencies]
+ruff = ">=0.14.1,<0.15"

@@ -6,6 +6,46 @@ def first_existing(paths):
             return p
     return None
 
+def configure_spatial_env(proj_override=None, gdal_override=None):
+    conda_prefix = os.environ.get("CONDA_PREFIX") or sys.prefix
+    candidates_proj = [
+        proj_override,
+        os.environ.get("PROJ_LIB"),
+        os.path.join(conda_prefix, "share", "proj"),
+        os.path.join(sys.prefix, "share", "proj"),
+        "/usr/share/proj",
+    ]
+    candidates_gdal = [
+        gdal_override,
+        os.environ.get("GDAL_DATA"),
+        os.path.join(conda_prefix, "share", "gdal"),
+        os.path.join(sys.prefix, "share", "gdal"),
+        "/usr/share/gdal",
+    ]
+
+    proj_dir = first_existing(candidates_proj)
+    gdal_dir = first_existing(candidates_gdal)
+
+    if not proj_dir:
+        raise RuntimeError(f"Could not locate PROJ data dir. Tried: {candidates_proj}")
+    if not gdal_dir:
+        print(f"Warning: Could not locate GDAL data dir. Tried: {candidates_gdal}")
+
+    os.environ["PROJ_LIB"] = proj_dir
+    if gdal_dir:
+        os.environ["GDAL_DATA"] = gdal_dir
+    os.environ.setdefault("PROJ_NETWORK", "ON")
+
+    try:
+        from pyproj import datadir as _pyproj_datadir
+        _pyproj_datadir.set_data_dir(proj_dir)
+    except Exception as e:
+        print(f"Warning: failed to set pyproj data dir: {e}")
+
+    print(f"[DEBUG] Using PROJ_LIB={proj_dir}")
+    if gdal_dir:
+        print(f"[DEBUG] Using GDAL_DATA={gdal_dir}")
+
 def open_and_clip_nc(nc_path, mask_gdf):
     # Try engines that don't need GDAL plugins
     for eng in ("h5netcdf", "netcdf4"):
@@ -38,46 +78,6 @@ def open_and_clip_nc(nc_path, mask_gdf):
         raise RuntimeError(f"{nc_path} missing expected lon/lat dims")
 
     return da.to_dataset(name=var)
-
-# Candidate locations for PROJ & GDAL data
-conda_prefix = os.environ.get("CONDA_PREFIX") or sys.prefix
-candidates_proj = [
-    os.environ.get("PROJ_LIB"),
-    os.path.join(conda_prefix, "share", "proj"),
-    os.path.join(sys.prefix, "share", "proj"),
-    "/usr/share/proj",
-]
-candidates_gdal = [
-    os.environ.get("GDAL_DATA"),
-    os.path.join(conda_prefix, "share", "gdal"),
-    os.path.join(sys.prefix, "share", "gdal"),
-    "/usr/share/gdal",
-]
-
-PROJ_DIR = first_existing(candidates_proj)
-GDAL_DIR = first_existing(candidates_gdal)
-
-if not PROJ_DIR:
-    raise RuntimeError(f"Could not locate PROJ data dir. Tried: {candidates_proj}")
-if not GDAL_DIR:
-    # Not fatal for many ops, but warn loudly
-    print(f"Warning: Could not locate GDAL data dir. Tried: {candidates_gdal}")
-
-os.environ["PROJ_LIB"] = PROJ_DIR
-if GDAL_DIR:
-    os.environ["GDAL_DATA"] = GDAL_DIR
-os.environ.setdefault("PROJ_NETWORK", "ON")
-
-# Tell pyproj explicitly (must be after envs, before anyone uses CRS)
-try:
-    from pyproj import datadir as _pyproj_datadir
-    _pyproj_datadir.set_data_dir(PROJ_DIR)
-except Exception as e:
-    print(f"Warning: failed to set pyproj data dir: {e}")
-
-print(f"[DEBUG] Using PROJ_LIB={PROJ_DIR}")
-if GDAL_DIR:
-    print(f"[DEBUG] Using GDAL_DATA={GDAL_DIR}")
 
 import xarray as xr
 import rioxarray as rxr
@@ -169,6 +169,14 @@ def setupArgs() -> None:
                         choices=mapper.ALLOWED_DOWNSCALING_METHODS,
                         type=str,
                         help='Downscaling method used to downscale GCM data to 4KM resolution, e.g. DBCCA')
+    parser.add_argument('--projLib',
+                        type=str,
+                        required=False,
+                        help='Path to the PROJ data directory (sets PROJ_LIB).')
+    parser.add_argument('--gdalData',
+                        type=str,
+                        required=False,
+                        help='Path to the GDAL data directory (sets GDAL_DATA).')
     return parser.parse_args()
     
 def pull_from_globus(url: str, retries: int = 5, blocksize: int = 1024 * 1024) -> str:
@@ -309,6 +317,7 @@ def clean_up_files(files:list) -> None:
 if __name__ == "__main__":
     # Get Arguments - model, variables, product, date range, and geo_json
     args = setupArgs()
+    configure_spatial_env(args.projLib, args.gdalData)
     parameters = parseParameters(args.parameters)
     output_dir = args.outputDir
     if output_dir[-1] == '/':
