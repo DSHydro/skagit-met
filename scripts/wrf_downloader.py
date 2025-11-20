@@ -125,7 +125,9 @@ def generateFileNames(
 ) -> list[str]:
   r = pd.date_range(start_date, end_date, freq="1h", inclusive="both", normalize=True)
   file_prefix = {1: "wrfout", 2: "auxhist"}
-  path_prefix = "downscaled_products/gcm" if not model.startswith("era5") else "downscaled_products/reanalysis"
+  path_prefix = (
+    "downscaled_products/gcm" if not model.startswith("era5") else "downscaled_products/reanalysis"
+  )
   path = f"{path_prefix}/{model}{'_historical' if historical else ''}{'_bc' if bias_correction else ''}/hourly"
 
   def year_folder(ts):
@@ -135,6 +137,7 @@ def generateFileNames(
     f"{path}/{year_folder(d)}/d0{domain}/{file_prefix[data_tier]}_d01_{pd.to_datetime(d).strftime('%Y-%m-%d_%H:%M:%S')}"
     for d in r
   ]
+
 
 def downloadS3File(bucket: str, file: str, output_dir: str) -> str:
   if output_dir[-1] == "/":
