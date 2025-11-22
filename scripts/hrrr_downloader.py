@@ -12,23 +12,6 @@ import dask as dask
 import cfgrib
 
 
-def configure_spatial_env(proj_dir: str | None, gdal_dir: str | None) -> None:
-  """Set PROJ/GDAL environment variables if provided or already available."""
-  if proj_dir:
-    os.environ["PROJ_LIB"] = proj_dir
-  if gdal_dir:
-    os.environ["GDAL_DATA"] = gdal_dir
-  if proj_dir or gdal_dir:
-    os.environ.setdefault("PROJ_NETWORK", "ON")
-  if proj_dir:
-    try:
-      from pyproj import datadir
-
-      datadir.set_data_dir(proj_dir)
-    except Exception:
-      pass
-
-
 # Parse command arguments from script run in the command line
 def setupArgs() -> None:
   parser = argparse.ArgumentParser(
@@ -77,25 +60,9 @@ def setupArgs() -> None:
   )
   parser.add_argument(
     "--outputDir",
-    default="../../../data0/balaji24/data/weather_data/",
+    default="data/weather_data/",
     type=str,
     help="Directory/path to download data/output zarr to.",
-  )
-  default_proj = os.environ.get("PROJ_LIB") or os.path.join(sys.prefix, "share", "proj")
-  default_gdal = os.environ.get("GDAL_DATA") or os.path.join(sys.prefix, "share", "gdal")
-  parser.add_argument(
-    "--projLib",
-    type=str,
-    required=False,
-    default=default_proj,
-    help="Path to the PROJ data directory (sets PROJ_LIB).",
-  )
-  parser.add_argument(
-    "--gdalData",
-    type=str,
-    required=False,
-    default=default_gdal,
-    help="Path to the GDAL data directory (sets GDAL_DATA).",
   )
   return parser.parse_args()
 
@@ -216,9 +183,14 @@ def mergeDatasets(regionSubsetGribFiles: list) -> xr.Dataset:
   with xr.set_options(keep_attrs=True):
     combined_ds = xr.combine_by_coords(parts, compat="override")
 
-  # convert lon to [-180, 180] if source was [0, 360]
+  # convert lon from [0, 360] → [-180, 180] and set standard attrs
   if (combined_ds.longitude > 180).any():
-    combined_ds["longitude"] = combined_ds.longitude - 360
+      combined_ds["longitude"] = (combined_ds["longitude"] + 180) % 360 - 180
+      combined_ds["longitude"].attrs = {
+          "units": "degrees_east",
+          "standard_name": "longitude",
+          "long_name": "longitude",
+      }
 
   return combined_ds
 
@@ -244,7 +216,6 @@ def iter_months(start: str, end: str):
 
 if __name__ == "__main__":
   args = setupArgs()
-  configure_spatial_env(args.projLib, args.gdalData)
   parameters = parseParameters(args.parameters)
 
   # Read geo bounds once
