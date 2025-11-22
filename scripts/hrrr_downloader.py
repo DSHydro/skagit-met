@@ -1,6 +1,5 @@
 import os
 import argparse
-import sys
 
 from herbie import FastHerbie, wgrib2
 import shapely
