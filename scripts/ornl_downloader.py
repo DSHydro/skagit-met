@@ -8,7 +8,6 @@ from datetime import datetime as dt
 
 import fsspec
 import geopandas as gpd
-import rioxarray  # noqa: F401  # registers .rio accessor
 import xarray as xr
 from pyproj import datadir as pyproj_datadir
 
