@@ -9,7 +9,6 @@ from datetime import datetime as dt
 import fsspec
 import geopandas as gpd
 import xarray as xr
-from pyproj import datadir as pyproj_datadir
 
 import helper.ornl_mapper as mapper
 
