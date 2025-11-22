@@ -83,14 +83,14 @@ def setupArgs() -> argparse.Namespace:
     default=DEFAULT_REGION,
     type=str,
     choices=REGION_OPTIONS,
-    help="Region to download data for.",
+    help="Region to download data for. Default is US",
   )
   parser.add_argument(
     "--resolution",
     default=DEFAULT_RESOLUTION,
     type=str,
     choices=RESOLUTION_OPTIONS,
-    help="Data resolution.",
+    help="Resolution of data to download. Default is 4km. Only 4km and 800m are available.",
   )
   parser.add_argument(
     "--format",
