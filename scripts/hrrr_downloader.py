@@ -40,14 +40,14 @@ def setupArgs() -> None:
     default="2020-01-01",
     type=str,
     required=True,
-    help="Start date of data to download e.g. 2020-10-01 for October 1, 2020",
+    help="Start date of data to download e.g. 2020-10-01 for October 1, 2020 00:00:00",
   )
   parser.add_argument(
     "--endDate",
     default="2020-01-02",
     type=str,
     required=True,
-    help="End date of data to download e.g. 2020-10-01 for October 1, 2020",
+    help="End date of data to download e.g. 2020-10-03 for October 3, 2020 00:00:00",
   )
   parser.add_argument(
     "--geoJson",
@@ -68,7 +68,7 @@ def setupArgs() -> None:
 def getFastHerbie(
   start_date: str, end_date: str, model: str, product: str, save_dir: str
 ) -> FastHerbie:
-  date_range = pd.date_range(start=start_date, end=end_date, freq="1h")
+  date_range = pd.date_range(start=start_date, end=f'{end_date}T23:00:00', freq="1h")
   return FastHerbie(date_range, model=model, product=product, fxx=range(0, 2), save_dir=save_dir)
 
 
