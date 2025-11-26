@@ -25,8 +25,9 @@ test-all-downloads = [{ task = "hrrr-test" }, { task = "wrf-test" }, { task = "p
 
 # Getting atmospheric river ranges
 hrrr-2021 = "python scripts/hrrr_downloader.py --parameters 'TMP:surface,RH:2 m above ground,WIND:10 m above ground,APCP:surface:0-1 hour acc fcst,DSWRF:surface,DLWRF:surface' --startDate 2021-11-10 --endDate 2021-11-17"
-wrf-2021 = "pixi run wrf --startDate 2021-11-10 --endDate 2021-11-17"
+wrf-2021 = "pixi run wrf --model era5 --dataTier 2 --startDate 2021-11-10 --endDate 2021-11-17"
 prism-2021 = "python scripts/prism_downloader.py --startDate 2021-11-10 --endDate 2021-11-17"
+#ornl-2021 = "python scripts/ornl_downloader.py --startYear 2021 --endYear 2021 --parameters prcp --gcm CNRM-ESM2-1 --climateScenario ssp585 --downscalingMethod DBCCA"
 
 
 [feature.dev.tasks]
@@ -103,6 +104,7 @@ jupyter_bokeh = ">=4.0.5,<5"
 ffmpeg = ">=7.1.1,<8"
 pillow = ">=11.2.1,<12"
 libgdal-netcdf = ">=3.10.3,<4"
+s3fs = ">=2025.10.0,<2026"
 
 [feature.analysis.target.osx-arm64.dependencies]
 libgfortran5 = ">=14"
