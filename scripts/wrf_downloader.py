@@ -5,7 +5,6 @@ import xarray as xr
 import dask as dask
 import argparse
 import os
-import sys
 import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
