@@ -101,20 +101,6 @@ def setupArgs() -> argparse.Namespace:
     default=False,
     help="Keep downloaded ZIP files after processing.",
   )
-  parser.add_argument(
-    "--projLib",
-    type=str,
-    required=False,
-    default=DEFAULT_PROJ,
-    help="Path to the PROJ data directory.",
-  )
-  parser.add_argument(
-    "--gdalData",
-    type=str,
-    required=False,
-    default=DEFAULT_GDAL,
-    help="Path to the GDAL data directory.",
-  )
   return parser.parse_args()
 
 
