@@ -85,22 +85,6 @@ def setupArgs() -> None:
     type=str,
     help="Path to/name of geo_json file that geogrpahically limits the downloaded data",
   )
-  default_proj = os.environ.get("PROJ_LIB") or os.path.join(sys.prefix, "share", "proj")
-  default_gdal = os.environ.get("GDAL_DATA") or os.path.join(sys.prefix, "share", "gdal")
-  parser.add_argument(
-    "--projLib",
-    type=str,
-    required=False,
-    default=default_proj,
-    help="Path to the PROJ data directory (sets PROJ_LIB).",
-  )
-  parser.add_argument(
-    "--gdalData",
-    type=str,
-    required=False,
-    default=default_gdal,
-    help="Path to the GDAL data directory (sets GDAL_DATA).",
-  )
   return parser.parse_args()
 
 
