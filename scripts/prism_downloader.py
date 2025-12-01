@@ -90,10 +90,7 @@ def setupArgs() -> argparse.Namespace:
     default=False,
     help="Keep downloaded ZIP files after processing.",
   )
-<<<<<<< HEAD
-=======
 
->>>>>>> 12e439f (Modified prism_downloader)
   return parser.parse_args()
 
 
