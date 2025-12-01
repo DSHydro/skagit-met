@@ -23,16 +23,6 @@ config = Config(
 s3 = boto3.client("s3", config=config)
 
 
-def configure_spatial_env(proj_dir: str | None, gdal_dir: str | None) -> None:
-  """Configure PROJ/GDAL env vars so geopandas/shapely work inside Pixi."""
-  if proj_dir:
-    os.environ["PROJ_LIB"] = proj_dir
-  if gdal_dir:
-    os.environ["GDAL_DATA"] = gdal_dir
-  if proj_dir or gdal_dir:
-    os.environ.setdefault("PROJ_NETWORK", "ON")
-
-
 # Parse command arguments from script run in the command line
 def setupArgs() -> None:
   parser = argparse.ArgumentParser(
