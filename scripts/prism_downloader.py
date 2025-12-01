@@ -1,7 +1,7 @@
 import argparse
 import os
 import pathlib
-import sys
+
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime as dt
 from zipfile import ZipFile
@@ -11,15 +11,6 @@ import pandas as pd
 import requests
 import rioxarray  # noqa: F401
 import xarray as xr
-from pyproj import datadir as pyproj_datadir
-
-
-DEFAULT_PROJ = os.environ.get("PROJ_LIB") or os.path.join(sys.prefix, "share", "proj")
-DEFAULT_GDAL = os.environ.get("GDAL_DATA") or os.path.join(sys.prefix, "share", "gdal")
-os.environ.setdefault("PROJ_LIB", DEFAULT_PROJ)
-os.environ.setdefault("GDAL_DATA", DEFAULT_GDAL)
-pyproj_datadir.set_data_dir(os.environ["PROJ_LIB"])
-os.environ.setdefault("PROJ_NETWORK", "ON")
 
 gpd.options.io_engine = "fiona"
 os.environ["GEOPANDAS_USE_PYOGRIO"] = "0"
@@ -34,8 +25,6 @@ FORMAT_OPTIONS = ["nc", "bil", "asc", "geotiff"]
 DEFAULT_FREQUENCY = "daily"
 FREQUENCY_OPTIONS = ["daily", "monthly", "annual"]
 DEFAULT_PARAMS = ["tmean", "tmax", "tmin", "ppt", "vpdmax", "vpdmin", "tdmean"]
-
-
 
 
 def setupArgs() -> argparse.Namespace:
@@ -101,6 +90,10 @@ def setupArgs() -> argparse.Namespace:
     default=False,
     help="Keep downloaded ZIP files after processing.",
   )
+<<<<<<< HEAD
+=======
+
+>>>>>>> 12e439f (Modified prism_downloader)
   return parser.parse_args()
 
 
@@ -230,7 +223,6 @@ def download_file(var: str, date: str, output_dir: str, args) -> str | None:
 
 if __name__ == "__main__":
   args = setupArgs()
-  configure_spatial_env(args.projLib, args.gdalData)
   parameters = args.parameters
   dates = parseDateRange(args.startDate, args.endDate, args.frequency)
   output_dir = args.outputDir.rstrip("/")
