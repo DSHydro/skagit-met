@@ -210,7 +210,6 @@ def write_to_zarr(dataset: xr.Dataset, output_dir: str, path: str) -> None:
 if __name__ == "__main__":
   # Get Arguments - model, variables, product, date range, and geo_json
   args = setupArgs()
-  configure_spatial_env(args.projLib, args.gdalData)
   parameters = parseParameters(args.parameters)
   output_dir = args.outputDir.rstrip("/")
   os.makedirs(output_dir, exist_ok=True)
