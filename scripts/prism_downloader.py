@@ -36,17 +36,6 @@ FREQUENCY_OPTIONS = ["daily", "monthly", "annual"]
 DEFAULT_PARAMS = ["tmean", "tmax", "tmin", "ppt", "vpdmax", "vpdmin", "tdmean"]
 
 
-def configure_spatial_env(proj_dir: str | None, gdal_dir: str | None) -> None:
-  if proj_dir:
-    os.environ["PROJ_LIB"] = proj_dir
-    try:
-      pyproj_datadir.set_data_dir(proj_dir)
-    except Exception:
-      pass
-  if gdal_dir:
-    os.environ["GDAL_DATA"] = gdal_dir
-  if proj_dir or gdal_dir:
-    os.environ.setdefault("PROJ_NETWORK", "ON")
 
 
 def setupArgs() -> argparse.Namespace:
