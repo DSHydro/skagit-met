@@ -30,7 +30,7 @@ To play around with the jupyter notebooks, just run `pixi run nb`, and a local i
 [The DSHydro JupyterHub](https://dshydro.ce.washington.edu/jupyter/hub) is a limited-access JupyterHub running on servers at the University of Washington.
 
 1. Run `curl -fsSL https://pixi.sh/install.sh | bash` to install pixi for your user
-2. Install the data-download environment or analysis environment using `pixi install -e download-data` and `pixi install -e analysis`
+2. Install the data-download environment or analysis environment using `pixi install -e data-download` and `pixi install -e analysis`
 3. To look at the analysis notebook, install the analysis kernel with the following command: `./skagit-met/.pixi/envs/analysis/bin/python3 -m ipykernel install --user --name=skagit_analysis`
 4. Once installed, open the .ipynb file you wish to look at, and select the skagit_analyis kernel.
 
