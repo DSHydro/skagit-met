@@ -74,7 +74,7 @@ def getFastHerbie(
     date_range,
     model=model,
     product=product,
-    fxx=range(0, 2),
+    fxx=[6],
     save_dir=save_dir,
     priority=["aws", "nomads", "pando"],
   )
@@ -221,7 +221,7 @@ if __name__ == "__main__":
   bounds = parseGeoJson(args.geoJson)
 
   for m_start, m_end in iter_months(args.startDate, args.endDate):
-    out_name = f"{m_start[:7]}_HRRR_data.zarr"
+    out_name = f"{m_start[:7]}_HRRR_f06_data.zarr"
     out_path = os.path.join(args.outputDir.rstrip("/"), out_name)
     if os.path.exists(out_path):
       print(f"Exists, skipping: {out_path}")
