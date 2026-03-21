@@ -3,6 +3,9 @@
 For a notebook-by-notebook list, see:
 - [`analysis/notebook_index.md`](/home/balaji24/skagit-met/analysis/notebook_index.md)
 
+For script run commands and execution notes, see:
+- https://docs.google.com/document/d/1JtlW1EyVr0qvwuQOmcGAeBiOIlFBhZT0AaU_cW5U_ac/edit?usp=sharing
+
 ## What This Folder Is
 
 This folder contains the analysis notebooks I used for the Skagit basin work including:
