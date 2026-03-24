@@ -10,6 +10,11 @@ import xarray as xr
 from dask.diagnostics import ProgressBar
 from shapely.geometry import LinearRing, Polygon, shape
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+DEFAULT_GEOJSON = PROJECT_ROOT / "data/GIS/SkagitBoundary.json"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data/CONUS"
+
 OSN_ENDPOINT = "https://usgs.osn.mghpcc.org"
 STORE_URLS = {
     "daily": "s3://hytest/conus404/conus404_daily.zarr",
@@ -69,15 +74,6 @@ def setupArgs() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--derivedVars",
-        action="store_true",
-        default=True,
-        help=(
-            "Compute derived variables (WS10 wind speed, PRECIP_TOT, RH, VPD) when the "
-            "required source variables are present. Enabled by default."
-        ),
-    )
-    parser.add_argument(
         "--noDerivedVars",
         dest="derivedVars",
         action="store_false",
@@ -85,13 +81,13 @@ def setupArgs() -> argparse.Namespace:
     )
     parser.add_argument(
         "--geojson",
-        default="../data/GIS/SkagitBoundary.json",
+        default=str(DEFAULT_GEOJSON),
         type=str,
         help="Path to a GeoJSON file used to spatially mask the data. Default: SkagitBoundary.json.",
     )
     parser.add_argument(
         "--outputDir",
-        default="../data/CONUS/",
+        default=str(DEFAULT_OUTPUT_DIR),
         type=str,
         help="Directory to write the output Zarr store. Default: ../data/CONUS/.",
     )
