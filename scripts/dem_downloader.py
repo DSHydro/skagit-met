@@ -33,7 +33,7 @@ def setupArgs() -> argparse.Namespace:
     )
     parser.add_argument(
         "--outputFile",
-        default=DEFAULT_OUTPUT,
+        default=str(DEFAULT_OUTPUT),
         type=str,
         help=f"Output path for the raw (unclipped) DEM GeoTIFF. Default: {DEFAULT_OUTPUT}",
     )
@@ -47,12 +47,9 @@ def setupArgs() -> argparse.Namespace:
     )
     parser.add_argument(
         "--geojson",
-        default=DEFAULT_GEOJSON,
+        default=str(DEFAULT_GEOJSON),
         type=str,
-        help=(
-            "GeoJSON file defining the watershed boundary used to clip the DEM. "
-            f"Default: {DEFAULT_GEOJSON}"
-        ),
+        help=f"Path to a GeoJSON file used to spatially mask the data. Default: {DEFAULT_GEOJSON}",
     )
     parser.add_argument(
         "--skipDownload",
@@ -118,8 +115,8 @@ if __name__ == "__main__":
     clipped_output = os.path.abspath(args.clippedOutputFile or get_clipped_path(output_file))
 
     if args.bounds is None:
-        print("Bounding box automatically computed from GeoJSON.")
         bounds = bounds_from_geojson(geojson_file)
+        print(f"Bounding box automatically computed from GeoJSON: {bounds}")
     else:
         bounds = tuple(args.bounds)
 
