@@ -249,15 +249,16 @@ def write_to_zarr(ds: xr.Dataset, output_path: str) -> None:
     print(f"Wrote: {output_path}")
 
 
-
 if __name__ == "__main__":
     args = setupArgs()
-    variables =  [v.strip() for v in args.parameters.split(",") if v.strip()]
+    variables = [v.strip() for v in args.parameters.split(",") if v.strip()]
 
     output_dir = args.outputDir.rstrip("/")
     os.makedirs(output_dir, exist_ok=True)
 
-    out_zarr = os.path.join(output_dir, f"conus404_skagit_{args.datasetKind}.zarr")
+    start = args.startDate.replace("-", "") if args.startDate else None
+    end = args.endDate.replace("-", "") if args.endDate else None
+    out_zarr = os.path.join(output_dir, f"conus404_{start}-{end}_{args.datasetKind}.zarr")
 
     print(f"Opening CONUS404 {args.datasetKind} dataset from OSN...")
     ds = open_conus404(args.datasetKind)
