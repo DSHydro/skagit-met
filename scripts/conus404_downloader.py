@@ -83,13 +83,13 @@ def setupArgs() -> argparse.Namespace:
         "--geojson",
         default=str(DEFAULT_GEOJSON),
         type=str,
-        help="Path to a GeoJSON file used to spatially mask the data. Default: SkagitBoundary.json.",
+        help=f"Path to a GeoJSON file used to spatially mask the data. Default: {DEFAULT_GEOJSON}",
     )
     parser.add_argument(
         "--outputDir",
         default=str(DEFAULT_OUTPUT_DIR),
         type=str,
-        help="Directory to write the output Zarr store. Default: ../data/CONUS/.",
+        help=f"Output path for the Zarr store. Default: {DEFAULT_OUTPUT_DIR}",
     )
     return parser.parse_args()
 
@@ -249,13 +249,10 @@ def write_to_zarr(ds: xr.Dataset, output_path: str) -> None:
     print(f"Wrote: {output_path}")
 
 
-def parse_parameters(param_string: str) -> list[str]:
-    return [v.strip() for v in param_string.split(",") if v.strip()]
-
 
 if __name__ == "__main__":
     args = setupArgs()
-    variables = parse_parameters(args.parameters)
+    variables =  [v.strip() for v in args.parameters.split(",") if v.strip()]
 
     output_dir = args.outputDir.rstrip("/")
     os.makedirs(output_dir, exist_ok=True)
