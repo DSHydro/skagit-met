@@ -16,10 +16,11 @@ DEFAULT_GEOJSON = PROJECT_ROOT / "data/GIS/SkagitBoundary.json"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data/CONUS"
 
 OSN_ENDPOINT = "https://usgs.osn.mghpcc.org"
-STORE_URLS = {
-    "daily": "s3://hytest/conus404/conus404_daily.zarr",
-    "hourly": "s3://hytest/conus404/conus404_hourly.zarr",
-    "monthly": "s3://hytest/conus404/conus404_monthly.zarr",
+STORE_URL = "s3://hytest/conus404/conus404_{}.zarr"
+DATASETS = {
+    "daily",
+    "hourly",
+    "monthly",
 }
 DEFAULT_VARS = [
     "T2",
@@ -51,7 +52,7 @@ def setupArgs() -> argparse.Namespace:
         "--datasetKind",
         default="daily",
         type=str,
-        choices=list(STORE_URLS.keys()),
+        choices=list(DATASETS),
         help="Temporal resolution of the CONUS404 dataset (daily or hourly). Default: daily.",
     )
     parser.add_argument(
@@ -129,7 +130,7 @@ def load_boundary(json_path: str) -> gpd.GeoDataFrame:
 
 def open_conus404(dataset_kind: str) -> xr.Dataset:
     """Open the CONUS404 Zarr store from the USGS OSN public endpoint."""
-    store_url = STORE_URLS[dataset_kind]
+    store_url = STORE_URL.format(dataset_kind)
     return xr.open_zarr(
         store=store_url,
         storage_options={"anon": True, "client_kwargs": {"endpoint_url": OSN_ENDPOINT}},
