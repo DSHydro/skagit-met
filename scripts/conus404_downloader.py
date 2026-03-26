@@ -19,6 +19,7 @@ OSN_ENDPOINT = "https://usgs.osn.mghpcc.org"
 STORE_URLS = {
     "daily": "s3://hytest/conus404/conus404_daily.zarr",
     "hourly": "s3://hytest/conus404/conus404_hourly.zarr",
+    "monthly": "s3://hytest/conus404/conus404_monthly.zarr",
 }
 DEFAULT_VARS = [
     "T2",
