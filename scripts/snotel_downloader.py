@@ -227,8 +227,9 @@ def getDataByFrequency(
       print(f"    Got {len(df)} records for {point.name}.")
       df["site_name"] = point.name
     return df
-  except requests.exceptions.HTTPError:
-    print(f"  Error downloading data for {point.id}. Skipping...")
+  # except requests.exceptions.HTTPError:
+  except Exception as e:
+    print(f"  Error downloading data for {point.id}: {type(e).__name__}. Skipping...")
     return pd.DataFrame()
 
 

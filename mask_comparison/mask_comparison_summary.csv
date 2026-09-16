@@ -1,0 +1,3 @@
+grid,huc8_cells,boundary_cells,overlap_cells,only_huc8,only_boundary,huc8_coverage,boundary_coverage
+PNNL,232,228,227,5,1,97.84482758620689,99.56140350877193
+UCLA,98,95,94,4,1,95.91836734693878,98.94736842105263

@@ -41,12 +41,14 @@ os.makedirs(OUT_DIR, exist_ok=True)
 # --- AR Event windows (exact dates from cumulative precipitation plot) ---
 
 AR_EVENTS = [
-    {"label": "November_2021_AR0", "start": "2021-11-14", "end": "2021-11-21", "row_label": "Nov 14–21, 2021\n(AR0)"},
+    # {"label": "November_2021_AR0", "start": "2021-11-14", "end": "2021-11-21", "row_label": "Nov 14–21, 2021\n(AR0)"},
     {"label": "December_1995_AR0", "start": "1995-11-30", "end": "1995-12-07", "row_label": "Nov 30–Dec 7, 1995\n(AR0)"},
-    {"label": "November_1990_AR0", "start": "1990-11-12", "end": "1990-11-19", "row_label": "Nov 12–19, 1990\n(AR0)"},
+    # {"label": "November_1990_AR0", "start": "1990-11-12", "end": "1990-11-19", "row_label": "Nov 12–19, 1990\n(AR0)"},
     {"label": "November_2011_AR0", "start": "2011-11-16", "end": "2011-11-23", "row_label": "Nov 16–23, 2011\n(AR0)"},
     {"label": "November_2015_AR0", "start": "2015-11-12", "end": "2015-11-19", "row_label": "Nov 12–19, 2015\n(AR0)"},
-    {"label": "March_2007_AR0", "start": "2007-03-11", "end": "2007-03-18", "row_label": "Mar 11–18, 2007\n(AR0)"}
+    {"label": "March_2007_AR0", "start": "2007-03-11", "end": "2007-03-18", "row_label": "Mar 11–18, 2007\n(AR0)"},
+    {"label": "December_2010_AR0", "start": "2010-12-12", "end": "2010-12-19", "row_label": "Dec 12–19, 2010\n(AR0)"},
+    {"label": "November_2009_AR0", "start": "2009-11-25", "end": "2009-12-02", "row_label": "Nov 25–Dec 2, 2009\n(AR0)"}
 ]
 
 PRODUCTS = ['PRISM', 'Daymet', 'PNNL', 'CONUS404', 'UCLA', 'GridMET'] #'ORNL (Daymet)', 'HRRR'
@@ -139,7 +141,7 @@ if da_prism_sample is not None:
 else:
     raise FileNotFoundError(f"Could not find PRISM data for reference date {prism_sample_date.date()}")
 
-ds_ucla_static = xr.open_dataset(os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc"))
+ds_ucla_static = xr.open_dataset("/data0/hernanqd/instance_2021_data/preparing_datasets/UCLA/wrfinput_d02_coord.nc")
 ucla_lon = ds_ucla_static.lon2d.values
 ucla_lat = ds_ucla_static.lat2d.values
 ds_ucla_static.close()
@@ -304,48 +306,71 @@ def load_event_grids(event):
     except Exception as e:
         print(f"    [WARN] PNNL: {e}")
 
-    # 4. CONUS404
+    # 4. CONUS404 (hourly)
     try:
-        conus_path = os.path.join(BASE_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr")
-        ds = xr.open_zarr(conus_path)
-        mask_c = bb_mask(ds.lon.values, ds.lat.values)
-        rows, cols = np.where(mask_c)
-        if len(rows):
-            rm, rx, cm, cx = rows.min(), rows.max(), cols.min(), cols.max()
-            ds = ds.isel(y=slice(rm, rx+1), x=slice(cm, cx+1))
-        da = ds['precip_daily'].sel(time=slice(start, end)).sum(dim='time').compute()
-        grids['CONUS404'] = da
-        ds.close()
-        print("    CONUS404 OK")
+        from pathlib import Path
+        conus_data_path = Path("/data0/hernanqd/instance_2021_data/preparing_datasets/CONUS404/hourly_ar_non_ar_events")
+        conus_files_list = sorted(conus_data_path.glob('*.PREC_ACC_NC.wrf2d_d01_*.nc'))
+        conus_files_in_range = []
+        for f in conus_files_list:
+            try:
+                ds_temp = xr.open_dataset(f)
+                time = ds_temp.Time.values[0]
+                if pd.Timestamp(start) <= pd.Timestamp(time) <= pd.Timestamp(end):
+                    conus_files_in_range.append(f)
+                ds_temp.close()
+            except:
+                pass
+
+        if conus_files_in_range:
+            ds_conus_list = [xr.open_dataset(f) for f in conus_files_in_range]
+            ds_conus = xr.concat(ds_conus_list, dim='Time')
+            da = ds_conus['PREC_ACC_NC'].sum(dim='Time', skipna=False).compute()
+            # Assign proper coordinate names for regridding (CONUS uses XLONG/XLAT with south_north/west_east dims)
+            da = da.assign_coords(lon=(('south_north', 'west_east'), ds_conus.XLONG.values),
+                                  lat=(('south_north', 'west_east'), ds_conus.XLAT.values))
+            grids['CONUS404'] = da
+            print("    CONUS404 OK")
+        else:
+            print("    [WARN] CONUS404: no hourly files found for this window")
     except Exception as e:
         print(f"    [WARN] CONUS404: {e}")
 
-    # 5. UCLA ERA5 d02
+    # 5. UCLA (hourly)
     try:
-        da_parts = []
-        for yr_off in [year-1, year]:
-            p = os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec",
-                             f"prec.daily.era5.d02.{yr_off}.nc")
-            if os.path.exists(p):
-                file_start = f"{yr_off}-09-01"
-                file_end = f"{yr_off+1}-08-31"
-                s_start = max(start, file_start)
-                s_end = min(end, file_end)
-                if s_start <= s_end:
-                    ds_u = xr.open_dataset(p)
-                    u_var = "prec" if "prec" in ds_u.data_vars else "pr"
-                    da_part = ds_u[u_var].sel(day=slice(s_start, s_end)).compute()
-                    da_parts.append(da_part)
-                    ds_u.close()
-        if da_parts:
-            da_year = xr.concat(da_parts, dim='day')
-            da_year = da_year.isel(lat2d=slice(row_min_u, row_max_u+1),
-                                   lon2d=slice(col_min_u, col_max_u+1))
-            da = da_year.sum(dim='day')
-            da = da.assign_coords(lat=(('lat2d', 'lon2d'), ucla_lat_c),
-                                  lon=(('lat2d', 'lon2d'), ucla_lon_c))
+        from pathlib import Path
+        from datetime import timedelta
+        ucla_data_path = Path("/data0/hernanqd/instance_2021_data/hourly_ar_non_ar_events")
+
+        # Generate list of hourly filenames in the event window
+        date_start_ucla = pd.Timestamp(start) - timedelta(hours=1)
+        date_end = pd.Timestamp(end)
+        current = date_start_ucla
+        ucla_filenames = []
+        while current <= date_end:
+            fn = f"auxhist_d01_{current.strftime('%Y-%m-%d_%H:%M:%S')}.nc"
+            ucla_filenames.append(ucla_data_path / fn)
+            current += timedelta(hours=1)
+
+        ucla_files_exist = [f for f in ucla_filenames if f.exists()]
+        if ucla_files_exist:
+            ds_ucla = xr.open_mfdataset(ucla_files_exist, concat_dim='Time', combine='nested')
+
+            # Calculate total rain and increments
+            total_rain_ucla = ds_ucla['RAINC'] + ds_ucla['RAINNC']
+            total_increments_ucla = total_rain_ucla.diff(dim='Time')
+
+            # Sum increments over the event window
+            da = total_increments_ucla.sum(dim='Time', skipna=False).compute()
+            da = da.isel(south_north=slice(row_min_u, row_max_u+1),
+                        west_east=slice(col_min_u, col_max_u+1))
+            da = da.assign_coords(lat=(('south_north', 'west_east'), ucla_lat_c),
+                                  lon=(('south_north', 'west_east'), ucla_lon_c))
             grids['UCLA'] = da
+            ds_ucla.close()
             print("    UCLA OK")
+        else:
+            print("    [WARN] UCLA: no hourly files found for this window")
     except Exception as e:
         print(f"    [WARN] UCLA: {e}")
 

@@ -27,7 +27,8 @@ from datetime import datetime, timedelta
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
 BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
 HUC8_GEO = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
-BOUNDARY_PATH = Path("/data0/nksp2/skagit/skagit_2/skagit-met/data/GIS/SkagitBoundary.json")
+# --- Boundary path (commented out - using HUC8 masking instead) ---
+# BOUNDARY_PATH = Path("/data0/nksp2/skagit/skagit_2/skagit-met/data/GIS/SkagitBoundary.json")
 EVENTS_CSV = os.path.join(BASE_DIR, "multi_product_bulk_bias/outputs/4_clean_bias_table.csv")
 OUTPUT_DIR = os.path.join(BASE_DIR, "cumulative_precipitation_plot")
 
@@ -85,6 +86,18 @@ def get_mask(gdf, lon, lat):
         idx = gdf[gdf["Name"].str.contains(r, case=False)].index[0]
         region_indices.append(idx)
     return mask.sel(region=region_indices)
+
+# --- Boundary-based masking (commented out - using HUC8 masking instead) ---
+# def get_boundary_mask(lon2d, lat2d, boundary_poly):
+#     """Create 2D mask for watershed boundary (same approach as spatial_plots and create_ar_events_plots)"""
+#     df_pts = pd.DataFrame({'lon': lon2d.flatten(), 'lat': lat2d.flatten()})
+#     gdf_pts = gpd.GeoDataFrame(
+#         df_pts,
+#         geometry=gpd.points_from_xy(df_pts.lon, df_pts.lat),
+#         crs="EPSG:4326"
+#     )
+#     inside = gdf_pts.intersects(boundary_poly).values
+#     return inside.reshape(lon2d.shape)
 
 
 def calculate_basin_mean(da, mask_2d):
@@ -164,6 +177,32 @@ def load_masks_huc8():
 
     return gdf, mask_ucla, lon2d_ucla, pnnl_lon_full, pnnl_lat_full, mask_pnnl
 
+# --- Boundary-based mask loading (commented out - using HUC8 masking instead) ---
+# def load_masks_boundary():
+#     """Load boundary-based masks for UCLA and PNNL products (same approach as spatial_plots and create_ar_events_plots)"""
+#     # Load boundary polygon
+#     boundary_gdf = gpd.read_file(BOUNDARY_PATH)
+#     if hasattr(boundary_gdf.to_crs("EPSG:4326"), 'union_all'):
+#         boundary_poly = boundary_gdf.to_crs("EPSG:4326").union_all()
+#     else:
+#         boundary_poly = boundary_gdf.to_crs("EPSG:4326").unary_union
+#
+#     # Load UCLA coordinates and create boundary mask
+#     ucla_coords = xr.open_dataset(ucla_coords_file)
+#     lat2d_ucla = ucla_coords['lat2d'].values
+#     lon2d_ucla = ucla_coords['lon2d'].values
+#     mask_ucla = get_boundary_mask(lon2d_ucla, lat2d_ucla, boundary_poly)
+#
+#     # Load PNNL coordinates and create boundary mask
+#     ds_pnnl_static = xr.open_dataset(pnnl_grid_file)
+#     pnnl_lon_full = ds_pnnl_static.XLONG_M.values[0]
+#     pnnl_lat_full = ds_pnnl_static.XLAT_M.values[0]
+#     ds_pnnl_static.close()
+#
+#     mask_pnnl = get_boundary_mask(pnnl_lon_full, pnnl_lat_full, boundary_poly)
+#
+#     return mask_ucla, lon2d_ucla, pnnl_lon_full, pnnl_lat_full, mask_pnnl
+
 
 def get_pnnl_data_path(year):
     """Get PNNL data path for a given year."""
@@ -174,7 +213,7 @@ def get_pnnl_data_path(year):
 
 
 def load_hourly_data_for_period(date_start, date_end, gdf, mask_ucla, lon2d_ucla, pnnl_lon_full, pnnl_lat_full, mask_pnnl):
-    """Load CONUS404, UCLA, and PNNL hourly data for a given period using consistent masking."""
+    """Load CONUS404, UCLA, and PNNL hourly data for a given period using consistent HUC8 masking."""
 
     # CONUS404
     conus_files_list = sorted(conus_data_path.glob('*.PREC_ACC_NC.wrf2d_d01_*.nc'))
