@@ -1,39 +1,69 @@
-# Reproducible Skagit Precipitation Analysis
+# Skagit Basin Precipitation Analysis
 
-This folder is a simplified, beginner-friendly entry point for the Skagit precipitation workflow.
+Comprehensive analysis of precipitation products and atmospheric river events in the Skagit Basin.
 
-## What is included
+## Overview
 
-- Data preparation and cleaning steps
-- Preprocessing for basin-scale precipitation products
-- Bias calculation against PRISM and Daymet baselines
-- Plotting scripts for the manuscript-style figures
-- Short notes explaining what each script does
+This repository contains reproducible workflows for:
+- Comparing multiple precipitation products (daily and hourly)
+- Quantifying bias against PRISM and Daymet baselines
+- Analyzing high-impact atmospheric river (AR) events
+- Generating manuscript-style visualizations
 
-## Folder structure
+## Directory Structure
 
-- scripts/: runnable Python scripts
-- docs/: short explanations and workflow notes
-- data/: expected input/output data locations
-- notebooks/: optional notebooks for exploration
+### Analysis Modules
 
-## Main workflow
+- **`cumulative_precipitation_plot/`** - Cumulative precipitation analysis for AR and non-AR events
+  - Daily and hourly-derived cumulative precipitation
+  - Combined precipitation-streamflow plots
+  - Top 50 AR vs non-AR event comparison
 
-1. Prepare the event list and bulk bias dataset
-2. Download the required weather/product datasets if needed
-3. Clean and standardize the precipitation products
-4. Compute bias against the chosen baseline
-5. Generate the manuscript-style bias plot
+- **`multi_product_bulk_bias/`** - Bulk bias analysis across all precipitation products
+  - Bias calculation against PRISM and Daymet baselines
+  - Bias metrics (MAE, RMSE, correlation)
+  - Manuscript-style bias plots with time period and event type breakdown
 
-## Key output
+- **`spatial_plots/`** - Spatial visualizations of precipitation products
+  - Basin-mean precipitation maps
+  - Spatial extent and resolution comparisons
 
-- The main figure produced here is:
-  - grouped_bias_3_metrics_2_periods.png
+- **`houly_timeseries_plots/`** - Hourly precipitation timeseries analysis
+  - Event-level hourly precipitation patterns
+  - Product comparisons at high temporal resolution
 
-## Suggested order
+- **`mask_comparison/`** - Sub-basin masking and spatial analysis
+  - HUC8 sub-basin comparisons (Upper Skagit, Sauk, Lower Skagit)
+  - Sensitivity analysis for basin boundaries
 
-1. Run any of the download wrappers as needed, such as download_prism.py, download_hrrr.py, download_gridmet.py, download_conus.py, download_snotel.py, download_backfill_daymet.py, download_backfill_gridmet.py, download_bulk_historical_snotel.py, download_ornl.py, download_wrf.py, or download_fetch_analysis_data.py
-2. Run data_preparation.py
-3. Run preprocess_products.py
-4. Run plot_prism_bias.py
-5. Run plot_daymet_bias.py
+### Supporting Structure
+
+- **`data/`** - Data preparation and file structure
+  - Expected input data locations
+  - GIS boundaries and reference data
+  - Output data storage
+
+- **`scripts/`** - Utility and helper scripts
+  - Common functions for data processing
+  - Download wrappers for external datasets
+
+## Key Outputs
+
+- `multi_product_bulk_bias/grouped_bias_3_metrics_2_periods.png` - Main bias comparison figure
+- `cumulative_precipitation_plot/specific_ar_events_cumulative_precipitation.png` - AR event analysis
+- `spatial_plots/` - Basin-scale precipitation maps
+
+## Quick Start
+
+1. Begin with `multi_product_bulk_bias/` for overall product bias assessment
+2. Move to `cumulative_precipitation_plot/` for event-specific analysis
+3. Explore `spatial_plots/` for geographic patterns
+4. Check `houly_timeseries_plots/` for high-resolution event details
+
+## Data Products Analyzed
+
+**Daily:** PRISM, Daymet, GridMET, CONUS404, UCLA, PNNL
+
+**Hourly:** CONUS404, UCLA, PNNL
+
+**Discharge:** USGS gauge 12200500 (Skagit River at Marblemount)

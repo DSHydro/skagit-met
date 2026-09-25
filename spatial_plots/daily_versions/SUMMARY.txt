@@ -1,0 +1,89 @@
+================================================================================
+DAILY VERSIONS OF SPATIAL PLOT SCRIPTS
+================================================================================
+
+Location: /data0/hernanqd/plots_code/skagit_basin_de/spatial_plots/daily_versions/
+
+This directory contains 8 spatial plot scripts configured to use DAILY versions
+of UCLA and CONUS404 precipitation datasets (as opposed to the hourly versions
+used in the "updated" scripts in the parent directory).
+
+================================================================================
+FILES (8 TOTAL)
+================================================================================
+
+AR EVENTS (6 scripts):
+  1. plot_ar_events_cumulative_spatial_bias_grid_3_days_daily.py
+  2. plot_ar_events_cumulative_spatial_bias_grid_8_days_daily.py
+  3. plot_ar_events_cumulative_spatial_grid_3_days_daily.py
+  4. plot_ar_events_cumulative_spatial_grid_8_days_daily.py
+
+NON-AR EVENTS (4 scripts):
+  5. plot_non_ar_events_cumulative_spatial_bias_grid_3_days_daily.py
+  6. plot_non_ar_events_cumulative_spatial_bias_grid_8_days_daily.py
+  7. plot_non_ar_events_cumulative_spatial_grid_3_days_daily.py
+  8. plot_non_ar_events_cumulative_spatial_grid_8_days_daily.py
+
+================================================================================
+KEY DIFFERENCES FROM HOURLY VERSIONS
+================================================================================
+
+CONUS404 LOADING:
+  Daily:   Loads from pre-computed daily zarr file
+           Path: conus404_skagit_precip_daily_full.zarr
+           Variable: precip_daily
+  
+  Hourly:  Loads hourly netCDF files and sums them
+           Path: hourly_ar_non_ar_events/ directory
+           Variable: PREC_ACC_NC
+
+UCLA LOADING:
+  Daily:   Loads daily netCDF files (one file per day)
+           Path: UCLA/daily_ar_non_ar_events/
+           Variables: RAINC + RAINNC (summed directly, no increments)
+  
+  Hourly:  Loads hourly netCDF files, calculates increments, then sums
+           Path: hourly_ar_non_ar_events/
+           Variables: RAINC + RAINNC.diff() then .sum()
+
+OTHER PRODUCTS:
+  All other products (PRISM, Daymet, PNNL, GridMET) are loaded identically
+  in both daily and hourly versions.
+
+================================================================================
+USAGE
+================================================================================
+
+These scripts can be run independently to generate plots using the daily
+data approach for comparison with the hourly versions.
+
+Example:
+  python3 plot_ar_events_cumulative_spatial_bias_grid_3_days_daily.py
+
+Output:
+  PNG files saved to: spatial_plots/plots/
+
+================================================================================
+COMPARISON
+================================================================================
+
+To compare the results of daily vs. hourly approaches:
+
+Daily output plot file:
+  ar_events_cumulative_spatial_bias_grid_3_days.png
+
+Hourly output plot file (from updated versions):
+  ar_events_cumulative_spatial_bias_grid_3_days.png
+
+(Same filename, but from different script versions - would need to rename
+one version to compare side-by-side)
+
+For automated comparison, see the parent directory:
+  plot_bias_difference_grid_hourly_vs_daily.py
+
+================================================================================
+DATE CREATED
+================================================================================
+Generated: 2026-09-17
+
+================================================================================

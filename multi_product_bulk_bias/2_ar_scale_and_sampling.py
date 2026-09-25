@@ -44,13 +44,40 @@ def run_bulk_analysis():
     # 2. Sampling Strategy
     # We take all AR Scale 1-5 cases
     ar_events = ar_df[ar_df['ar_scale'] > 0].copy()
-    # We take a sample of 2,000 Scale 0 cases
-    scale_0_data = ar_df[ar_df['ar_scale'] == 0]
-    non_ar_sample = scale_0_data.sample(n=min(2000, len(scale_0_data)), random_state=42).copy()
 
-    analysis_subset = pd.concat([ar_events, non_ar_sample]).sort_values('date').reset_index(drop=True)
+    # # Original: Take all Scale 0 cases (non-AR)
+    # # scale_0_data = ar_df[ar_df['ar_scale'] == 0]
+    # # non_ar_sample = scale_0_data.sample(n=min(2000, len(scale_0_data)), random_state=42).copy()
+    # # non_ar_sample = scale_0_data.copy()
+    # # analysis_subset = pd.concat([ar_events, non_ar_sample]).sort_values('date').reset_index(drop=True)
+
+    # Updated: Filter Scale 0 cases by AR isolation window (±5 days)
+    scale_0_data = ar_df[ar_df['ar_scale'] == 0].copy()
+    ar_dates = ar_df[ar_df['ar_scale'] > 0]['date'].values
+
+    def is_within_ar_window(date, ar_dates, window_days=5):
+        if len(ar_dates) == 0:
+            return False
+        date_np = np.datetime64(date)
+        min_distance = np.min(np.abs((ar_dates - date_np) / np.timedelta64(1, 'D')).astype(int))
+        return min_distance <= window_days
+
+    outside_window = scale_0_data['date'].apply(lambda d: not is_within_ar_window(d, ar_dates)).values
+    non_ar_isolated = scale_0_data[outside_window].copy()
+    # # Apply random sampling to non-AR isolated days
+    # non_ar_sample = non_ar_isolated.sample(n=min(2000, len(non_ar_isolated)), random_state=42).copy()
+
+    # Use all non-AR isolated days (no sampling)
+    non_ar_sample = non_ar_isolated.copy()
+
+    within_window = scale_0_data[~outside_window].copy()
+    within_window['ar_scale'] = np.nan
+
+    analysis_subset = pd.concat([ar_events, non_ar_sample, within_window]).sort_values('date').reset_index(drop=True)
+    # Remove rows where ar_scale is NaN (dates within AR isolation window)
+    analysis_subset = analysis_subset[analysis_subset['ar_scale'].notna()]
     analysis_subset = analysis_subset[(analysis_subset['date'].dt.year >= 1981) & (analysis_subset['date'].dt.year <= 2025)]
-    print(f"Total analysis targets: {len(analysis_subset)} (AR: {len(ar_events)}, Sampled Scale 0: {len(non_ar_sample)})")
+    print(f"Total analysis targets: {len(analysis_subset)} (AR: {len(ar_events)}, Non-AR Scale 0: {len(non_ar_sample)})")
 
     # # Initialize columns
     # for col in ['prism_3d_tot', 'prism_3d_max', 'pnnl_3d_tot', 'pnnl_3d_max']:

@@ -1,0 +1,2 @@
+event,start_date,end_date,PRISM_cumulative_precip_mean_mm,Daymet_cumulative_precip_mean_mm,PNNL_cumulative_precip_mean_mm,CONUS404_cumulative_precip_mean_mm,UCLA_cumulative_precip_mean_mm,GridMET_cumulative_precip_mean_mm
+November_1990_AR5,1990-11-22,1990-11-29,348.5257642704752,271.6199077670811,279.76509602400245,288.06511663065237,360.21518858777426,277.7536599877355

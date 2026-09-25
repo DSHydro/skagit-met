@@ -131,21 +131,21 @@ def plot_prism_bias():
     fig, axes = plt.subplots(2, 2, figsize=(14, 10), facecolor="white") #, sharey='row')
 
     plot_panel(axes[0, 0], period1[period1["ar_scale"] > 0], "ar_scale", [p for p in products], sort_func=custom_sort_ar_scale, show_bucket_size=True)
-    axes[0, 0].set_title("Bias by AR Scale (1981 - 2020)", weight="bold")
+    axes[0, 0].set_title("A) Bias by AR Scale (1981 - 2020)", weight="bold")
     axes[0, 0].set_xlabel("Atmospheric River Scale (1-5)", labelpad=8)
 
 
     plot_panel(axes[1, 0], period1, "Streamflow Bucket (cms)", [p for p in products], sort_func=custom_sort_streamflow, show_bucket_size=True)
-    axes[1, 0].set_title("Bias by Streamflow Intensity (1981 - 2020)\nAR and non-AR events", weight="bold", fontsize=14)
+    axes[1, 0].set_title("C) Bias by Streamflow Intensity (1981 - 2020)\nAR and non-AR events", weight="bold", fontsize=14)
     axes[1, 0].set_xlabel("Streamflow Range (cms)", labelpad=8)
 
 
     plot_panel(axes[0, 1], period1[period1["ar_scale"] == 0], "Precipitation Bucket (mm)", [p for p in products], sort_func=custom_sort_precipitation, show_bucket_size=True)
-    axes[0, 1].set_title("Bias by PRISM Precipitation Intensity (1981 - 2020)\nNon-AR Events", weight="bold", fontsize=14)
+    axes[0, 1].set_title("B) Bias by PRISM Precipitation Intensity (1981 - 2020)\nNon-AR Events", weight="bold", fontsize=14)
     axes[0, 1].set_xlabel("PRISM 3-Day Total Precipitation Range (mm)", labelpad=8)
 
     plot_panel(axes[1, 1], period1, "Precipitation Bucket (mm)", [p for p in products], sort_func=custom_sort_precipitation, show_bucket_size=True)
-    axes[1, 1].set_title("Bias by PRISM Precipitation Intensity (1981 - 2020)\nAR and Non-AR Events", weight="bold", fontsize=14)
+    axes[1, 1].set_title("D) Bias by PRISM Precipitation Intensity (1981 - 2020)\nAR and Non-AR Events", weight="bold", fontsize=14)
     axes[1, 1].set_xlabel("PRISM 3-Day Total Precipitation Range (mm)", labelpad=8)
 
     handles = [Patch(facecolor=palette[p], edgecolor=palette[p], alpha=1.0, label=p) for p in products]

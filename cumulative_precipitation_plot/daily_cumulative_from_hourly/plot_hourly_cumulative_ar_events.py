@@ -2,12 +2,9 @@
 Extract and visualize cumulative precipitation from hourly datasets for specific AR events.
 
 This module uses hourly weather products (CONUS404, UCLA, PNNL) to create cumulative
-precipitation comparison plots for high-impact AR events. Each plot includes peak
+precipitation comparison plots for AR events. Each plot includes peak
 discharge measurements from USGS gauges and AR scale classifications.
 
-Main functions:
-  extract_hourly_event_window: Extract hourly precipitation for a specific event across products
-  plot_hourly_cumulative_ar_events: Generate cumulative precipitation plots from hourly data
 """
 
 import os

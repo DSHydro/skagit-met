@@ -36,7 +36,9 @@ DAYMET_ROOT = os.path.join(VAULT_DIR, "daymet_new_hq")
 BOUNDARY_PATH = os.path.join(BASE_DIR, "data/GIS/SkagitBoundary.json")
 SUBBASIN_PATH  = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
 OUT_DIR = os.path.join("/data0/hernanqd/plots_code/skagit_basin_de/spatial_plots/plots")
+HOURLY_MEANS_DIR = os.path.join("/data0/hernanqd/plots_code/skagit_basin_de/spatial_plots/hourly_means")
 os.makedirs(OUT_DIR, exist_ok=True)
+os.makedirs(HOURLY_MEANS_DIR, exist_ok=True)
 
 # --- AR Event windows (exact dates from cumulative precipitation plot) ---
 
@@ -213,6 +215,18 @@ gdf_pts = gpd.GeoDataFrame(df_pts, geometry=gpd.points_from_xy(df_pts.lon, df_pt
 inside = gdf_pts.intersects(poly).values
 mask_2d = inside.reshape(ref_lon.shape)
 
+# Precompute watershed masks for CONUS and UCLA native grids
+def create_watershed_mask(lon_grid, lat_grid, poly):
+    """Create watershed mask on native grid."""
+    df_pts = pd.DataFrame({'lon': lon_grid.flatten(), 'lat': lat_grid.flatten()})
+    gdf_pts = gpd.GeoDataFrame(df_pts, geometry=gpd.points_from_xy(df_pts.lon, df_pts.lat), crs="EPSG:4326")
+    inside = gdf_pts.intersects(poly).values
+    return inside.reshape(lon_grid.shape)
+
+# Note: CONUS and UCLA grids will be masked when their data is loaded
+conus_watershed_poly = poly
+ucla_watershed_poly = poly
+
 
 def regrid_to_reference(da_src, mask_2d=None):
     """Regrid any product to the reference PRISM grid via griddata."""
@@ -248,13 +262,16 @@ def regrid_to_reference(da_src, mask_2d=None):
 
 
 def load_event_grids(event):
-    """Load daily-mean precipitation from each product for the event window."""
+    """Load daily-mean precipitation from each product for the event window.
+    Also returns hourly spatial means for CONUS404 and UCLA."""
     start = event["start"]
     end   = event["end"]
     year  = int(start[:4])
     print(f"\n  Loading data for {event['label']} ({start} → {end})...")
 
     grids = {p: None for p in PRODUCTS}
+    hourly_range = pd.date_range(start, end, freq='H')
+    hourly_means = {'datetime': hourly_range.strftime('%Y-%m-%d %H:%M:%S').tolist(), 'CONUS404': [], 'UCLA': []}
 
     # 1. PRISM (new TIFF/zip source) - load each day and sum over the event window
     try:
@@ -331,6 +348,20 @@ def load_event_grids(event):
         if conus_files_in_range:
             ds_conus_list = [xr.open_dataset(f) for f in conus_files_in_range]
             ds_conus = xr.concat(ds_conus_list, dim='Time')
+
+            # Create watershed mask for CONUS grid
+            conus_mask = create_watershed_mask(ds_conus.XLONG.values, ds_conus.XLAT.values, conus_watershed_poly)
+
+            # Extract hourly spatial means (native grid, masked to watershed)
+            for t in hourly_range:
+                try:
+                    da_hour = ds_conus['PREC_ACC_NC'].sel(Time=t, method='nearest').compute()
+                    vals = da_hour.values.copy()
+                    vals[~conus_mask] = np.nan
+                    hourly_means['CONUS404'].append(float(np.nanmean(vals)))
+                except:
+                    hourly_means['CONUS404'].append(np.nan)
+
             da = ds_conus['PREC_ACC_NC'].sum(dim='Time', skipna=False).compute()
             # Assign proper coordinate names for regridding (CONUS uses XLONG/XLAT with south_north/west_east dims)
             da = da.assign_coords(lon=(('south_north', 'west_east'), ds_conus.XLONG.values),
@@ -339,8 +370,10 @@ def load_event_grids(event):
             print("    CONUS404 OK")
         else:
             print("    [WARN] CONUS404: no hourly files found for this window")
+            hourly_means['CONUS404'] = [np.nan] * len(hourly_range)
     except Exception as e:
         print(f"    [WARN] CONUS404: {e}")
+        hourly_means['CONUS404'] = [np.nan] * len(hourly_range)
 
     # 5. UCLA (hourly)
     try:
@@ -366,6 +399,37 @@ def load_event_grids(event):
             total_rain_ucla = ds_ucla['RAINC'] + ds_ucla['RAINNC']
             total_increments_ucla = total_rain_ucla.diff(dim='Time')
 
+            # Parse Times strings and assign to differenced data
+            # Skip first time value since diff() reduces size by 1
+            times_raw_ucla = ds_ucla['Times'].values
+            times_ucla_dt = []
+            for t in times_raw_ucla[1:]:  # Skip first (before diff)
+                if isinstance(t, bytes):
+                    t_str = t.decode().replace('_', ' ')
+                else:
+                    t_str = str(t).replace('_', ' ')
+                ts = pd.Timestamp(t_str)
+                times_ucla_dt.append(ts)
+            times_ucla_dt = np.array(times_ucla_dt, dtype='datetime64[ns]')
+
+            # Assign time coordinate to incremented data
+            total_increments_ucla = total_increments_ucla.assign_coords(
+                Time=('Time', times_ucla_dt)
+            )
+
+            # Create watershed mask for UCLA grid
+            ucla_mask = create_watershed_mask(ucla_lon, ucla_lat, ucla_watershed_poly)
+
+            # Extract hourly spatial means using time selection
+            for t in hourly_range:
+                try:
+                    da_hour = total_increments_ucla.sel(Time=t, method='nearest').compute()
+                    vals = da_hour.values.copy()
+                    vals[~ucla_mask] = np.nan
+                    hourly_means['UCLA'].append(float(np.nanmean(vals)))
+                except Exception as e:
+                    hourly_means['UCLA'].append(np.nan)
+
             # Sum increments over the event window
             da = total_increments_ucla.sum(dim='Time', skipna=False).compute()
             da = da.isel(south_north=slice(row_min_u, row_max_u+1),
@@ -377,8 +441,10 @@ def load_event_grids(event):
             print("    UCLA OK")
         else:
             print("    [WARN] UCLA: no hourly files found for this window")
+            hourly_means['UCLA'] = [np.nan] * len(hourly_range)
     except Exception as e:
         print(f"    [WARN] UCLA: {e}")
+        hourly_means['UCLA'] = [np.nan] * len(hourly_range)
 
     # 6. GridMET
     try:
@@ -444,7 +510,7 @@ def load_event_grids(event):
     else:
         print("    HRRR skipped (pre-2014 event or no grid)")
 
-    return grids
+    return grids, hourly_means
 
 
 def main():
@@ -456,7 +522,13 @@ def main():
         start = event["start"]
         end = event["end"]
         print(f"\nProcessing: {event['label']}")
-        grids = load_event_grids(event)
+        grids, hourly_means = load_event_grids(event)
+
+        # Save hourly spatial means to CSV
+        df_means = pd.DataFrame(hourly_means)
+        csv_path = os.path.join(HOURLY_MEANS_DIR, f"{event['label']}_hourly_spatial_means.csv")
+        df_means.to_csv(csv_path, index=False)
+        print(f"  Saved hourly spatial means to: {csv_path}")
 
         # Load SNOTEL data
         zarr_path = os.path.join(DATA_DIR, "weather_data", f"{start}_{end}_SNOTEL_daily_data.zarr")
@@ -531,6 +603,10 @@ def main():
         subplot_kw={"projection": ccrs.PlateCarree()},
         facecolor='#ffffff'
     )
+
+    # Ensure axes is always 2D
+    if len(AR_EVENTS) == 1:
+        axes = axes.reshape(1, -1)
 
     im = None
     for row_idx, event in enumerate(AR_EVENTS):
