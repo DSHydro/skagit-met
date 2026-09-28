@@ -333,6 +333,58 @@ def process_year(year, event_dates, masks_2d):
         
     return pd.DataFrame(results)
 
+def deduplicate_events_by_prism(df):
+    """
+    Group contiguous AR/non-AR events and keep the date with highest prism_3d_tot.
+    AR: groups contiguous dates with same ar_scale
+    Non-AR: groups contiguous non-AR dates
+    """
+    df = df.sort_values('date').reset_index(drop=True)
+
+    # Process AR events (ar_scale > 0)
+    ar_mask = df['ar_scale'] > 0
+    ar_events = df[ar_mask].copy().reset_index(drop=True)
+
+    if len(ar_events) > 0:
+        # Detect scale changes and date gaps
+        ar_events['scale_changed'] = ar_events['ar_scale'].ne(ar_events['ar_scale'].shift()).fillna(True)
+        ar_events['date_gap'] = ar_events['date'].diff() > pd.Timedelta(days=1)
+        ar_events.loc[0, 'date_gap'] = False
+        ar_events['group_id'] = (ar_events['scale_changed'] | ar_events['date_gap']).cumsum()
+
+        # Keep row with max prism_3d_tot for each group (skip groups with all NaN)
+        idx_list = []
+        for group_id, group_df in ar_events.groupby('group_id'):
+            valid_idx = group_df['prism_3d_tot'].idxmax()
+            if pd.notna(valid_idx):
+                idx_list.append(valid_idx)
+        ar_deduplicated = ar_events.loc[idx_list].drop(columns=['scale_changed', 'date_gap', 'group_id']).reset_index(drop=True)
+    else:
+        ar_deduplicated = pd.DataFrame()
+
+    # Process non-AR events (ar_scale == 0)
+    non_ar_events = df[~ar_mask].copy().reset_index(drop=True)
+
+    if len(non_ar_events) > 0:
+        # Detect date gaps
+        non_ar_events['date_gap'] = non_ar_events['date'].diff() > pd.Timedelta(days=1)
+        non_ar_events.loc[0, 'date_gap'] = False
+        non_ar_events['group_id'] = non_ar_events['date_gap'].cumsum()
+
+        # Keep row with max prism_3d_tot for each group (skip groups with all NaN)
+        idx_list = []
+        for group_id, group_df in non_ar_events.groupby('group_id'):
+            valid_idx = group_df['prism_3d_tot'].idxmax()
+            if pd.notna(valid_idx):
+                idx_list.append(valid_idx)
+        non_ar_deduplicated = non_ar_events.loc[idx_list].drop(columns=['date_gap', 'group_id']).reset_index(drop=True)
+    else:
+        non_ar_deduplicated = pd.DataFrame()
+
+    # Combine and sort
+    result = pd.concat([ar_deduplicated, non_ar_deduplicated]).sort_values('date').reset_index(drop=True)
+    return result
+
 def main():
     print("Loading geometry and template CSV...")
     gdf = load_regions()
@@ -387,7 +439,7 @@ def main():
     print("Merging corrected columns into original dataframe...")
     df_bulk_updated = df_bulk.drop(columns=cols_to_overwrite, errors='ignore')
     df_bulk_updated = pd.merge(df_bulk_updated, corrected_df, on='date', how='inner')
-    
+
     # Ensure all expected data columns exist (create with NaN if missing)
     expected_cols = ['prism_3d_tot', 'prism_3d_max', 'pnnl_3d_tot', 'pnnl_3d_max',
                      'daymet_3d_tot', 'daymet_3d_max', 'conus_3d_tot', 'conus_3d_max',
@@ -397,7 +449,11 @@ def main():
     for col in expected_cols:
         if col not in df_bulk_updated.columns:
             df_bulk_updated[col] = np.nan
-    
+
+    # Deduplicate contiguous events by keeping highest prism_3d_tot
+    print("Deduplicating contiguous events by prism_3d_tot...")
+    df_bulk_updated = deduplicate_events_by_prism(df_bulk_updated)
+
     # Save the updated CSV
     print(f"Saving updated CSV back to {OUTPUT_CSV}...")
     df_bulk_updated.to_csv(OUTPUT_CSV, index=False)
