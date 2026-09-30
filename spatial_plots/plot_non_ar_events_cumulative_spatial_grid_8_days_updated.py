@@ -40,15 +40,24 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 # --- AR Event windows (exact dates from cumulative precipitation plot) ---
 
+# AR_EVENTS = [
+#     # {"label": "November_2021_AR0", "start": "2021-11-14", "end": "2021-11-21", "row_label": "Nov 14–21, 2021\n(AR0)"},
+#     {"label": "December_1995_AR0", "start": "1995-11-30", "end": "1995-12-07", "row_label": "Nov 30–Dec 7, 1995\n(AR0)"},
+#     # {"label": "November_1990_AR0", "start": "1990-11-12", "end": "1990-11-19", "row_label": "Nov 12–19, 1990\n(AR0)"},
+#     {"label": "November_2011_AR0", "start": "2011-11-16", "end": "2011-11-23", "row_label": "Nov 16–23, 2011\n(AR0)"},
+#     {"label": "November_2015_AR0", "start": "2015-11-12", "end": "2015-11-19", "row_label": "Nov 12–19, 2015\n(AR0)"},
+#     {"label": "March_2007_AR0", "start": "2007-03-11", "end": "2007-03-18", "row_label": "Mar 11–18, 2007\n(AR0)"},
+#     {"label": "December_2010_AR0", "start": "2010-12-12", "end": "2010-12-19", "row_label": "Dec 12–19, 2010\n(AR0)"},
+#     {"label": "November_2009_AR0", "start": "2009-11-25", "end": "2009-12-02", "row_label": "Nov 25–Dec 2, 2009\n(AR0)"}
+# ]
+
 AR_EVENTS = [
-    # {"label": "November_2021_AR0", "start": "2021-11-14", "end": "2021-11-21", "row_label": "Nov 14–21, 2021\n(AR0)"},
-    {"label": "December_1995_AR0", "start": "1995-11-30", "end": "1995-12-07", "row_label": "Nov 30–Dec 7, 1995\n(AR0)"},
-    # {"label": "November_1990_AR0", "start": "1990-11-12", "end": "1990-11-19", "row_label": "Nov 12–19, 1990\n(AR0)"},
-    {"label": "November_2011_AR0", "start": "2011-11-16", "end": "2011-11-23", "row_label": "Nov 16–23, 2011\n(AR0)"},
-    {"label": "November_2015_AR0", "start": "2015-11-12", "end": "2015-11-19", "row_label": "Nov 12–19, 2015\n(AR0)"},
-    {"label": "March_2007_AR0", "start": "2007-03-11", "end": "2007-03-18", "row_label": "Mar 11–18, 2007\n(AR0)"},
-    {"label": "December_2010_AR0", "start": "2010-12-12", "end": "2010-12-19", "row_label": "Dec 12–19, 2010\n(AR0)"},
-    {"label": "November_2009_AR0", "start": "2009-11-25", "end": "2009-12-02", "row_label": "Nov 25–Dec 2, 2009\n(AR0)"}
+    {"label": "June_1985_AR0", "start": "1985-06-06", "end": "1985-06-13", "row_label": "Jun 6–13, 1985\n(AR0)"},
+    {"label": "June_2020_AR0", "start": "2020-05-30", "end": "2020-06-06", "row_label": "May 30–Jun 6, 2020\n(AR0)"},
+    {"label": "July_2022_AR0", "start": "2022-07-03", "end": "2022-07-10", "row_label": "Jul 3–10, 2022\n(AR0)"},
+    {"label": "June_1997_AR0", "start": "1997-06-22", "end": "1997-06-29", "row_label": "Jun 22–29, 1997\n(AR0)"},
+    {"label": "July_1982_AR0", "start": "1982-07-02", "end": "1982-07-09", "row_label": "Jul 2–9, 1982\n(AR0)"},
+    {"label": "June_2002_AR0", "start": "2002-06-17", "end": "2002-06-24", "row_label": "Jun 17–24, 2002\n(AR0)"}
 ]
 
 PRODUCTS = ['PRISM', 'Daymet', 'PNNL', 'CONUS404', 'UCLA', 'GridMET'] #'ORNL (Daymet)', 'HRRR'
@@ -308,7 +317,7 @@ def load_event_grids(event):
     # 4. CONUS404 (hourly)
     try:
         from pathlib import Path
-        conus_data_path = Path("/data0/hernanqd/instance_2021_data/preparing_datasets/CONUS404/hourly_ar_non_ar_events")
+        conus_data_path = Path("/data0/skagit_met/data_transfer/data/CONUS_hourly/hourly_ar_non_ar_events")
         conus_files_list = sorted(conus_data_path.glob('*.PREC_ACC_NC.wrf2d_d01_*.nc'))
         conus_files_in_range = []
         for f in conus_files_list:
@@ -339,7 +348,7 @@ def load_event_grids(event):
     try:
         from pathlib import Path
         from datetime import timedelta
-        ucla_data_path = Path("/data0/hernanqd/instance_2021_data/hourly_ar_non_ar_events")
+        ucla_data_path = Path("/data0/skagit_met/data_transfer/data/ucla_era5_d02_hourly/hourly_ar_non_ar_events")
 
         # Generate list of hourly filenames in the event window
         date_start_ucla = pd.Timestamp(start) - timedelta(hours=1)

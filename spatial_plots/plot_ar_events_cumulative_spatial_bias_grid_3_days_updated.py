@@ -316,7 +316,7 @@ def load_event_grids(event):
     # 4. CONUS404 (hourly)
     try:
         from pathlib import Path
-        conus_data_path = Path("/data0/hernanqd/instance_2021_data/preparing_datasets/CONUS404/hourly_ar_non_ar_events")
+        conus_data_path = Path("/data0/skagit_met/data_transfer/data/CONUS_hourly/hourly_ar_non_ar_events")
         conus_files_list = sorted(conus_data_path.glob('*.PREC_ACC_NC.wrf2d_d01_*.nc'))
         conus_files_in_range = []
         for f in conus_files_list:
@@ -347,7 +347,7 @@ def load_event_grids(event):
     try:
         from pathlib import Path
         from datetime import timedelta
-        ucla_data_path = Path("/data0/hernanqd/instance_2021_data/hourly_ar_non_ar_events")
+        ucla_data_path = Path("/data0/skagit_met/data_transfer/data/ucla_era5_d02_hourly/hourly_ar_non_ar_events")
 
         # Generate list of hourly filenames in the event window
         date_start_ucla = pd.Timestamp(start) - timedelta(hours=1)

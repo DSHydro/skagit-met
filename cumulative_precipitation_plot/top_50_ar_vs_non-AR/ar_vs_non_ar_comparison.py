@@ -46,7 +46,9 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "cumulative_precipitation_plot/top_50_ar_vs_
 # NON_AR_DATES = ['2008-07-02', '2008-07-03', '2008-07-04', '2012-07-10', '2012-07-15', '2020-06-01', '2022-07-04', '2022-07-02', '2012-07-18', '1997-05-13', '1986-06-01', '2018-05-16', '1999-08-05', '1999-07-11', '1986-06-02', '1981-01-02', '2008-07-07', '1999-07-22', '1997-06-24', '2011-07-17', '2014-05-16', '1987-05-01', '2011-07-19', '2011-07-09', '1997-06-06', '1999-07-21', '1985-05-24', '2011-07-20', '2011-07-23', '2018-05-24', '2023-05-05', '2018-05-09', '2011-07-18', '2023-05-15', '2017-05-23', '1982-07-04', '1999-07-08', '2006-05-17', '2014-05-04', '1982-05-26', '1986-06-03', '2011-06-14', '2002-07-09', '1982-06-12', '1991-07-25', '2017-12-02', '1985-06-09', '2008-06-01', '1999-07-30', '2022-06-30'] #5d window and 2000 non-AR sample
 # NON_AR_DATES = ['2008-07-04', '2012-07-14', '2021-06-30', '1982-06-18', '2002-06-15', '2012-07-16', '2021-07-01', '2002-06-16', '2012-07-17', '1999-06-17', '2002-06-14', '2006-05-18', '2011-07-03', '2012-06-22', '1986-06-01', '2002-07-13', '2002-07-12', '2011-06-07', '2012-07-05', '1999-07-12', '1999-06-18', '2012-05-15', '2018-05-10', '2022-07-05', '2017-06-01', '1991-01-16', '2012-07-07', '1997-06-06', '1982-06-15', '1999-07-25', '2011-07-23', '2002-06-18', '1985-05-25', '2014-05-25', '1982-07-04', '2021-06-05', '1999-07-26', '1986-06-03', '2011-06-14', '1997-06-25', '2012-05-01', '1990-07-12', '2011-07-16', '1999-07-17', '1990-06-11', '2008-07-08', '2017-12-03', '1997-06-26', '2011-06-06', '1999-07-18'] #3d window and 200 non-AR sample
 # NON_AR_DATES = ['2021-11-19', '2008-07-02', '2020-05-31', '1995-12-04', '1982-06-21', '1990-11-17', '2012-07-09', '2021-06-30', '1985-06-08', '1997-05-16', '2012-06-24', '2002-06-15', '2017-05-30', '2006-05-19', '2021-06-03', '2011-07-07', '2022-07-03', '1999-06-17', '1997-06-05', '2012-05-16', '2021-12-06', '1986-06-01', '1991-07-04', '1999-05-25', '2002-07-13', '2023-05-17', '2018-05-16', '1999-08-05', '2011-06-07', '2007-07-07', '2014-06-29', '1997-06-24', '1991-01-16', '2012-05-25', '1991-02-12', '1987-05-01', '2025-12-23', '1997-04-21', '1982-07-15', '1984-01-09', '2013-06-21', '2009-06-03', '1990-07-13', '2012-06-06', '2022-06-14', '2013-11-19', '2000-06-29', '1991-07-25', '2017-12-02', '1989-06-06'] #new filtering (keep contigous dates as one event and assign the date with peak discharge) - peak discharge
-NON_AR_DATES = ['1991-03-04', '2012-12-18', '1992-12-22', '2007-02-21', '1983-03-31', '1997-02-20', '2020-03-31', '2018-04-16', '1985-06-08', '1982-03-13'] #, '1990-01-27', '1994-03-19', '1986-02-17', '2021-12-24', '1991-01-01', '1991-11-27', '2010-01-02', '2018-02-18', '1988-03-07', '2011-11-14', '1998-01-07', '2004-09-18', '1982-11-18', '2013-11-19', '1997-04-22', '1983-11-27', '2008-02-01', '2006-04-15', '1988-11-12', '1990-03-10', '1981-04-10', '2000-01-10', '2002-03-21', '2001-05-01', '2015-12-21', '2009-04-14', '2003-02-22', '2000-03-19', '1992-06-14', '2008-12-29', '1984-03-14', '1984-12-23', '2013-03-21', '1990-09-01', '2016-12-30', '2014-02-25', '1996-12-22', '2023-02-08', '1985-04-01', '2016-12-12'] #new filtering (first, 5 day window arroun ar, then keep contigous dates as one event and assign the date with peak prism_3d_tot) - peak precip
+# NON_AR_DATES = ['1991-03-04', '2012-12-18', '1992-12-22', '2007-02-21', '1983-03-31', '1997-02-20', '2020-03-31', '2018-04-16', '1985-06-08', '1982-03-13'] #, top 10: new filtering (first, 5 day window arroun ar, then keep contigous dates as one event and assign the date with peak prism_3d_tot) - peak precip
+NON_AR_DATES = ['1991-03-04', '2012-12-18', '1992-12-22', '2007-02-21', '1983-03-31', '1997-02-20', '2020-03-31', '2018-04-16', '1985-06-08', '1982-03-13', '1990-01-27', '1994-03-19', '1986-02-17', '2021-12-24', '1991-01-01', '1991-11-27', '2010-01-02', '2018-02-18', '1988-03-07', '2011-11-14', '1998-01-07', '2004-09-18', '1982-11-18', '2013-11-19', '1997-04-22', '1983-11-27', '2008-02-01', '2006-04-15', '1988-11-12', '1990-03-10', '1981-04-10', '2000-01-10', '2002-03-21', '2001-05-01', '2015-12-21', '2009-04-14', '2003-02-22', '2000-03-19', '1992-06-14', '2008-12-29', '1984-03-14', '1984-12-23', '2013-03-21', '1990-09-01', '2016-12-30', '2014-02-25', '1996-12-22', '2023-02-08', '1985-04-01', '2016-12-12'] #top 50: new filtering (first, 5 day window arroun ar, then keep contigous dates as one event and assign the date with peak prism_3d_tot) - peak precip
+
 
 # AR_DATES = [
 #     '1990-11-24', '2006-11-07', '2009-01-08', '1990-11-25', '1990-11-11',
@@ -63,7 +65,8 @@ NON_AR_DATES = ['1991-03-04', '2012-12-18', '1992-12-22', '2007-02-21', '1983-03
 
 # AR_DATES = ['1990-11-24', '2006-11-07', '2009-01-08', '1990-11-25', '1990-11-11', '1995-11-30', '1990-11-10', '2003-11-19', '1995-11-10', '2003-10-22', '1989-11-11', '2003-10-21', '2003-10-18', '1982-02-15', '1997-03-20', '1989-11-10', '1995-11-29', '1986-01-19', '1983-01-10', '1995-11-08', '1982-02-16', '2006-11-06', '2021-11-15', '1986-11-24', '1988-10-16', '2005-01-19', '2003-10-17', '1986-02-25', '2003-10-23', '2007-12-04', '1988-10-17', '1990-11-12', '2014-11-28', '2003-10-19', '1985-11-03', '1998-11-15', '1989-11-09', '1995-02-20', '1995-02-19', '2009-01-10', '1994-12-01', '2005-01-20', '2002-02-22', '1982-01-25', '2006-11-05', '1982-01-24', '1998-11-16', '2009-01-07', '2011-01-17', '2010-12-13']
 # AR_DATES = ['1990-11-25', '1995-11-30', '1990-11-11', '2006-11-07', '2003-10-22', '2025-12-12', '2003-10-21', '2021-11-15', '1989-11-11', '2010-12-13', '1984-01-05', '2003-10-23', '2025-12-17', '2017-11-23', '1999-11-13', '2011-01-17', '1999-11-14', '2007-03-25', '1997-03-20', '2002-01-08', '2015-11-18', '2009-01-08', '2014-11-28', '2007-12-04', '2021-11-29', '2004-12-11', '2009-11-17', '1986-11-24', '2003-11-19', '2021-10-29', '2015-12-09', '2021-12-01', '2001-11-15', '1986-01-19', '2005-01-19', '1997-07-09', '1989-11-12', '1986-02-25', '2008-05-18', '2007-03-12', '2008-11-13', '2015-02-07', '2016-02-16', '2009-11-18', '1983-11-16', '1995-11-12', '2020-02-01', '1985-11-03', '1999-11-15', '2017-11-25'] #new filtering (keep contigous dates as one event and assign the date with peak discharge) - preak discharge
-AR_DATES = ['1990-11-24', '2006-11-07', '2009-01-08', '1990-11-11', '1995-11-30', '2003-11-19', '1995-11-10', '2003-10-22', '1989-11-11', '2003-10-21'] #, '1982-02-15', '1997-03-20', '1986-01-19', '1983-01-10', '1995-11-08', '2021-11-15', '1986-11-24', '1988-10-16', '2005-01-19', '1986-02-25', '2003-10-23', '2007-12-04', '2014-11-28', '1985-11-03', '1998-11-15', '1995-02-20', '2009-01-10', '1994-12-01', '2002-02-22', '1982-01-25', '1982-01-24', '2011-01-17', '2010-12-13', '1997-10-31', '1998-12-30', '2004-12-11', '1986-11-25', '2017-11-23', '2014-01-13', '2002-01-08', '1988-04-06', '2021-10-29', '1997-01-01', '1990-10-05', '1996-02-08', '1986-11-20', '1999-11-13', '2022-12-27', '1985-10-27', '1981-02-18'] #new filtering (first, 5 day window arroun ar, then keep contigous dates as one event and assign the date with peak prism_3d_tot) - peak precip
+# AR_DATES = ['1990-11-24', '2006-11-07', '2009-01-08', '1990-11-11', '1995-11-30', '2003-11-19', '1995-11-10', '2003-10-22', '1989-11-11', '2003-10-21'] #top 10: new filtering (first, 5 day window arroun ar, then keep contigous dates as one event and assign the date with peak prism_3d_tot) - peak precip
+AR_DATES = ['1990-11-24', '2006-11-07', '2009-01-08', '1990-11-11', '1995-11-30', '2003-11-19', '1995-11-10', '2003-10-22', '1989-11-11', '2003-10-21', '1982-02-15', '1997-03-20', '1986-01-19', '1983-01-10', '1995-11-08', '2021-11-15', '1986-11-24', '1988-10-16', '2005-01-19', '1986-02-25', '2003-10-23', '2007-12-04', '2014-11-28', '1985-11-03', '1998-11-15', '1995-02-20', '2009-01-10', '1994-12-01', '2002-02-22', '1982-01-25', '1982-01-24', '2011-01-17', '2010-12-13', '1997-10-31', '1998-12-30', '2004-12-11', '1986-11-25', '2017-11-23', '2014-01-13', '2002-01-08', '1988-04-06', '2021-10-29', '1997-01-01', '1990-10-05', '1996-02-08', '1986-11-20', '1999-11-13', '2022-12-27', '1985-10-27', '1981-02-18'] #top 50: new filtering (first, 5 day window arroun ar, then keep contigous dates as one event and assign the date with peak prism_3d_tot) - peak precip
 
 
 def extract_all_events(event_dates, products=['prism', 'pnnl', 'daymet', 'conus', 'ucla', 'gridmet']):
@@ -83,7 +86,7 @@ def extract_all_events(event_dates, products=['prism', 'pnnl', 'daymet', 'conus'
 
 
 def compute_cumulative_stats(all_event_data, product='prism'):
-    """Compute median and 25-75 percentile cumulative precipitation across events.
+    """Compute median and min-max cumulative precipitation across events.
 
     Returns statistics indexed by relative days from event date (day 0 = event date).
     """
@@ -110,15 +113,15 @@ def compute_cumulative_stats(all_event_data, product='prism'):
 
     # Calculate statistics
     median = combined.median(axis=1)
-    q25 = combined.quantile(0.25, axis=1)
-    q75 = combined.quantile(0.75, axis=1)
+    min_val = combined.min(axis=1)
+    max_val = combined.max(axis=1)
 
     # Sort by relative days
     median = median.sort_index()
-    q25 = q25.sort_index()
-    q75 = q75.sort_index()
+    min_val = min_val.sort_index()
+    max_val = max_val.sort_index()
 
-    return median, q25, q75
+    return median, min_val, max_val
 
 
 def calculate_cumulative_discharge_mm(discharge_df):
@@ -143,7 +146,7 @@ def calculate_cumulative_discharge_mm(discharge_df):
 
 
 def compute_cumulative_discharge_stats(event_dates, q_df):
-    """Compute median and 25-75 percentile cumulative discharge across events.
+    """Compute median and min-max cumulative discharge across events.
 
     Returns statistics indexed by relative days from event date.
     """
@@ -176,15 +179,15 @@ def compute_cumulative_discharge_stats(event_dates, q_df):
 
     # Calculate statistics
     median = combined.median(axis=1)
-    q25 = combined.quantile(0.25, axis=1)
-    q75 = combined.quantile(0.75, axis=1)
+    min_val = combined.min(axis=1)
+    max_val = combined.max(axis=1)
 
     # Sort by relative days
     median = median.sort_index()
-    q25 = q25.sort_index()
-    q75 = q75.sort_index()
+    min_val = min_val.sort_index()
+    max_val = max_val.sort_index()
 
-    return median, q25, q75
+    return median, min_val, max_val
 
 
 def plot_ar_comparison(product='prism'):
@@ -203,13 +206,13 @@ def plot_ar_comparison(product='prism'):
 
     # Compute precipitation statistics
     print(f"Computing cumulative precipitation statistics for {product.upper()}...")
-    non_ar_precip_median, non_ar_precip_q25, non_ar_precip_q75 = compute_cumulative_stats(non_ar_data, product)
-    ar_precip_median, ar_precip_q25, ar_precip_q75 = compute_cumulative_stats(ar_data, product)
+    non_ar_precip_median, non_ar_precip_min, non_ar_precip_max = compute_cumulative_stats(non_ar_data, product)
+    ar_precip_median, ar_precip_min, ar_precip_max = compute_cumulative_stats(ar_data, product)
 
     # Compute discharge statistics
     print(f"Computing cumulative discharge statistics...")
-    non_ar_discharge_median, non_ar_discharge_q25, non_ar_discharge_q75 = compute_cumulative_discharge_stats(NON_AR_DATES, q_df)
-    ar_discharge_median, ar_discharge_q25, ar_discharge_q75 = compute_cumulative_discharge_stats(AR_DATES, q_df)
+    non_ar_discharge_median, non_ar_discharge_min, non_ar_discharge_max = compute_cumulative_discharge_stats(NON_AR_DATES, q_df)
+    ar_discharge_median, ar_discharge_min, ar_discharge_max = compute_cumulative_discharge_stats(AR_DATES, q_df)
 
     # Create side-by-side plots with shared y-axis
     fig, (ax_precip, ax_discharge) = plt.subplots(1, 2, figsize=(16, 7), sharey=True)
@@ -223,11 +226,11 @@ def plot_ar_comparison(product='prism'):
     if non_ar_precip_median is not None:
         ax_precip.fill_between(
             non_ar_precip_median.index,
-            non_ar_precip_q25,
-            non_ar_precip_q75,
+            non_ar_precip_min,
+            non_ar_precip_max,
             alpha=0.25,
             color=color_non_ar,
-            label='Non-AR (25%-75%)'
+            label='Non-AR (min-max)'
         )
         ax_precip.plot(
             non_ar_precip_median.index,
@@ -244,11 +247,11 @@ def plot_ar_comparison(product='prism'):
     if ar_precip_median is not None:
         ax_precip.fill_between(
             ar_precip_median.index,
-            ar_precip_q25,
-            ar_precip_q75,
+            ar_precip_min,
+            ar_precip_max,
             alpha=0.25,
             color=color_ar,
-            label='AR (25%-75%)'
+            label='AR (min-max)'
         )
         ax_precip.plot(
             ar_precip_median.index,
@@ -272,11 +275,11 @@ def plot_ar_comparison(product='prism'):
     if non_ar_discharge_median is not None:
         ax_discharge.fill_between(
             non_ar_discharge_median.index,
-            non_ar_discharge_q25,
-            non_ar_discharge_q75,
+            non_ar_discharge_min,
+            non_ar_discharge_max,
             alpha=0.25,
             color=color_non_ar,
-            label='Non-AR (25%-75%)'
+            label='Non-AR (min-max)'
         )
         ax_discharge.plot(
             non_ar_discharge_median.index,
@@ -293,11 +296,11 @@ def plot_ar_comparison(product='prism'):
     if ar_discharge_median is not None:
         ax_discharge.fill_between(
             ar_discharge_median.index,
-            ar_discharge_q25,
-            ar_discharge_q75,
+            ar_discharge_min,
+            ar_discharge_max,
             alpha=0.25,
             color=color_ar,
-            label='AR (25%-75%)'
+            label='AR (min-max)'
         )
         ax_discharge.plot(
             ar_discharge_median.index,
@@ -317,8 +320,8 @@ def plot_ar_comparison(product='prism'):
     ax_discharge.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
 
     fig.suptitle(
-        f'Top 10 Events: AR vs Non-AR Comparison\n'
-        f'Precipitation ({product.upper()}) and Streamflow (Median with 25%-75% Quantile Range)',
+        f'Top 50 Events: AR vs Non-AR Comparison\n'
+        f'Precipitation ({product.upper()}) and Streamflow (Median with Min-Max Range)',
         fontsize=14,
         fontweight='bold',
         y=1.00

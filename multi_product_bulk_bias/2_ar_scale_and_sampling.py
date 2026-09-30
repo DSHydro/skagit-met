@@ -44,7 +44,7 @@ def run_bulk_analysis():
     # 1.25 Remove non-AR dates within ±5 days of any AR event
     ar_dates = ar_df[ar_df['ar_scale'] > 0]['date'].values
 
-    def is_within_ar_window(date, ar_dates, window_days=5):
+    def is_within_ar_window(date, ar_dates, window_days=3):
         if len(ar_dates) == 0:
             return False
         date_np = np.datetime64(date)

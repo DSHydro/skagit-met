@@ -7,6 +7,8 @@ import argparse
 import xarray as xr
 from pathlib import Path
 import requests
+from zeep import transports
+from requests import Session
 
 DEFAULT_SNOTEL_VARS = [
   SnotelPointData.ALLOWED_VARIABLES.SNOWDEPTH,
@@ -112,6 +114,14 @@ def parseVariables(paramString: str) -> tuple[list[str], list[SnotelVariables]]:
 
 def parseStationIDs(paramString: str) -> list[str]:
   return paramString.split(",")
+
+
+def create_snotel_transport():
+  session = Session()
+  session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+  })
+  return transports.Transport(session=session)
 
 
 def getStationData(
@@ -244,6 +254,14 @@ def writeToZarr(
 
 
 if __name__ == "__main__":
+  import zeep.client
+  original_init = zeep.client.Client.__init__
+  def patched_init(self, wsdl, **kwargs):
+    if 'transport' not in kwargs:
+      kwargs['transport'] = create_snotel_transport()
+    return original_init(self, wsdl, **kwargs)
+  zeep.client.Client.__init__ = patched_init
+
   args = setupArgs()
   var_strs, variables = parseVariables(args.variables)
   # Return if no valid vars
