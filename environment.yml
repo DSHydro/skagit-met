@@ -1,0 +1,41 @@
+name: skagit-met
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10.*
+  - herbie-data
+  - ipykernel
+  - cartopy
+  - wgrib2
+  - geojson
+  - zarr
+  - pygrib
+  - cfgrib
+  - dask
+  - flox
+  - xarray
+  - boto3
+  - netCDF4
+  - metpy
+  - xcdat
+  - ipympl
+  - contextily
+  - rioxarray
+  - pip
+  - rioxarray
+  - virtualizarr
+  - xoak
+  - numba
+  - elevation
+  - requests>=2.32.3,<3
+  - aiohttp>=3.11.7,<4
+  - fsspec=2024.9.0
+  - s3fs>=2022.11
+  - earthaccess>=0.9.0
+  - pip:
+      - metloom
+      - folium
+      - mapclassify
+      - pyPRISMClimate
+      - SynopticPy
+prefix: ./env
