@@ -444,7 +444,7 @@ def main():
             try:
                 subprocess.run([
                     sys.executable,
-                    os.path.join(BASE_DIR, "scripts/snotel_downloader.py"),
+                    os.path.join(BASE_DIR, "scripts/snotel_downloader_hernan.py"),
                     "--startDate", start,
                     "--endDate", end,
                     "--geojson", os.path.join(BASE_DIR, "data/GIS/SkagitBoundary.json"),

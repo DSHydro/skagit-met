@@ -9,7 +9,7 @@ from pathlib import Path
 
 def main() -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    target = repo_root / "scripts" / "snotel_downloader.py"
+    target = repo_root / "scripts" / "snotel_downloader_hernan.py"
     if not target.exists():
         raise FileNotFoundError(f"Missing downloader script: {target}")
     python_exe = os.environ.get("SKAGIT_PYTHON", "/home/nksp2/skagit/skagit_2/skagit-met/.pixi/envs/data-download/bin/python")
