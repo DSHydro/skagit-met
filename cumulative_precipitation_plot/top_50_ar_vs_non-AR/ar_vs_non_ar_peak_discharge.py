@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from plot_specific_ar_and_non_ar_events.plot_specific_ar_events import load_usgs_rdb
 
 # Configuration
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met"
 OUTPUT_DIR = os.path.join(BASE_DIR, "cumulative_precipitation_plot/top_50_ar_vs_non-AR/cumulative_precipitation_plot")
 
 # Hydrology data

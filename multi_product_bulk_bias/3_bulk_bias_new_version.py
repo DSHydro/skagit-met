@@ -28,9 +28,9 @@ import rioxarray
 
 warnings.filterwarnings('ignore')
 
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de/multi_product_bulk_bias"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/multi_product_bulk_bias"
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-PROJECT_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+PROJECT_DIR = "/data0/hernanqd/plots_code/skagit-met"
 HUC8_GEO = os.path.join(PROJECT_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
 BULK_CSV = os.path.join(BASE_DIR, "outputs/2_ar_scale_and_sampling.csv")
 OUTPUT_CSV = os.path.join(BASE_DIR, "outputs/3_multi_product_bulk_bias_data.csv")

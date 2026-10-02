@@ -34,7 +34,7 @@ BASE_DIR = "/data0/nksp2/skagit/skagit_2/skagit-met"
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
 BOUNDARY_PATH = os.path.join(BASE_DIR, "data/GIS/SkagitBoundary.json")
 SUBBASIN_PATH = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
-OUT_DIR = os.path.join("/data0/hernanqd/plots_code/skagit_basin_de/spatial_plots/plots/plot_spatial_seasonal_avg_prism")
+OUT_DIR = os.path.join("/data0/hernanqd/plots_code/skagit-met/spatial_plots/plots/plot_spatial_seasonal_avg_prism")
 
 # Output image paths
 OUT_PRODUCTS_IMG = os.path.join(OUT_DIR, "spatial_seasonal_products.png")

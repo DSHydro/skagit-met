@@ -13,7 +13,7 @@ import os
 import geopandas as gpd
 
 # Configuration
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met"
 SNOTEL_DATA_BASE = Path(BASE_DIR) / "data/hourly_snotel"
 ELEVATION_SHAPEFILE = Path(BASE_DIR) / "data/GIS/skagit_elevation_3520ft.shp"
 

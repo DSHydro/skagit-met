@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.patches import Patch
 
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de/multi_product_bulk_bias"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/multi_product_bulk_bias"
 INPUT_CSV = os.path.join(BASE_DIR, "outputs", "5_prepared_bias_table.csv")
-HERNAN_DIR = "/data0/hernanqd/plots_code"
+# HERNAN_DIR = "/data0/hernanqd/plots_code"
 OUT_DIR = os.path.join(BASE_DIR, "plots")
 OUT_IMG = os.path.join(OUT_DIR, "grouped_bias_3_metrics_2_periods.png")
 

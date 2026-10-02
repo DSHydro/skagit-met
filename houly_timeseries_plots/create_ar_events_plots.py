@@ -27,7 +27,7 @@ pnnl_grid_file = Path("/data0/skagit_met/data_transfer/data/PNNL/historical/SERD
 
 # PRISM data
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met"
 HUC8_GEO = Path(BASE_DIR) / "data/GIS/SkagitSubBasin_HUC8.geojson"
 PRISM_ROOT = Path(VAULT_DIR) / "prism_new_hq"
 

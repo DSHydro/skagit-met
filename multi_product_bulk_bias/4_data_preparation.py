@@ -10,7 +10,7 @@ This script focuses on the most important steps:
 import os
 import pandas as pd
 
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de/multi_product_bulk_bias"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/multi_product_bulk_bias"
 INPUT_CSV = os.path.join(BASE_DIR, "outputs", "3_multi_product_bulk_bias_data.csv")
 OUTPUT_CSV = os.path.join(BASE_DIR, "outputs", "4_clean_bias_table.csv")
 

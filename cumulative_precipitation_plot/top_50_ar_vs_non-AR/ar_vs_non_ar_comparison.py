@@ -26,7 +26,7 @@ DRAINAGE_AREA_MI2 = 3093 #mi^2 extracted from the USGS website
 DRAINAGE_AREA_FT2 = DRAINAGE_AREA_MI2 * 27_878_400
 
 # Configuration
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met"
 OUTPUT_DIR = os.path.join(BASE_DIR, "cumulative_precipitation_plot/top_50_ar_vs_non-AR/cumulative_precipitation_plot")
 
 # Event dates from the comparison notebook

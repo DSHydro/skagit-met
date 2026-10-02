@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from scipy.spatial.distance import cdist
 
 # Configuration
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met"
 pnnl_grid_file = Path("/data0/skagit_met/data_transfer/data/PNNL/historical/SERDP6km.geo_em.d01.nc")
 
 OUTPUT_DIR = Path(BASE_DIR) / "houly_timeseries_plots/pnnl_single_cell_plots"

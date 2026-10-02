@@ -25,10 +25,10 @@ from scipy.integrate import cumulative_trapezoid
 
 # Configuration
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met"
 HUC8_GEO = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
 EVENTS_CSV = os.path.join(BASE_DIR, "multi_product_bulk_bias/outputs/4_clean_bias_table.csv")
-OUTPUT_DIR = os.path.join(BASE_DIR, "cumulative_precipitation_plot")
+OUTPUT_DIR = os.path.join(BASE_DIR, "cumulative_precipitation_plot/plot_specific_ar_and_non_ar_events")
 
 # Hydrology data paths
 HYDRO_BASE_DIR = "/data0/nksp2/skagit/skagit_2/skagit-met"

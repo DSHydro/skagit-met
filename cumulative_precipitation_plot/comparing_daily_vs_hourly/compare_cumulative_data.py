@@ -13,9 +13,9 @@ from pathlib import Path
 from datetime import datetime
 
 # Configuration
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met"
 OUTPUT_DIR = os.path.join(BASE_DIR, "cumulative_precipitation_plot")
-TIMESERIES_DIR = os.path.join(OUTPUT_DIR, "timeseries_data")
+TIMESERIES_DIR = os.path.join(BASE_DIR, "timeseries_data")
 
 # Specific event dates to compare
 SPECIFIC_DATES = [

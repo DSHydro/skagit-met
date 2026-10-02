@@ -7,7 +7,7 @@ creates simple precipitation and streamflow bins, and saves the prepared data.
 import os
 import pandas as pd
 
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de/multi_product_bulk_bias"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/multi_product_bulk_bias"
 INPUT_CSV = os.path.join(BASE_DIR, "outputs", "4_clean_bias_table.csv")
 OUTPUT_CSV = os.path.join(BASE_DIR, "outputs", "5_prepared_bias_table.csv")
 

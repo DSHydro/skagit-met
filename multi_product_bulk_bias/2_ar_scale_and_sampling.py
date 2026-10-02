@@ -13,7 +13,7 @@ import fsspec
 from datetime import datetime
 
 # --- Paths ---
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de/multi_product_bulk_bias"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/multi_product_bulk_bias"
 AR_DATASET_PATH = os.path.join(BASE_DIR, "outputs/1_skagit_daily_integrated_dataset_1980_2025.csv")
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
 # PNNL_PARQUET_PATH = os.path.join(VAULT_DIR, "PNNL/historical/PNNL_historical.parquet")

@@ -22,12 +22,12 @@ from datetime import datetime, timedelta
 
 # Configuration
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met"
 HUC8_GEO = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
 # --- Boundary path (commented out - using HUC8 masking instead) ---
 # BOUNDARY_PATH = Path("/data0/nksp2/skagit/skagit_2/skagit-met/data/GIS/SkagitBoundary.json")
 EVENTS_CSV = os.path.join(BASE_DIR, "multi_product_bulk_bias/outputs/4_clean_bias_table.csv")
-OUTPUT_DIR = os.path.join(BASE_DIR, "cumulative_precipitation_plot")
+OUTPUT_DIR = os.path.join(BASE_DIR, "cumulative_precipitation_plot/daily_cumulative_from_hourly")
 
 # Hydrology data paths
 HYDRO_BASE_DIR = "/data0/nksp2/skagit/skagit_2/skagit-met"

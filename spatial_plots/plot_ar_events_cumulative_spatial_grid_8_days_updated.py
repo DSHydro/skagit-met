@@ -29,14 +29,14 @@ warnings.filterwarnings('ignore')
 
 # --- Configuration & Paths ---
 BASE_DIR = "/data0/nksp2/skagit/skagit_2/skagit-met"
-DATA_DIR = "/data0/hernanqd/plots_code/skagit_basin_de/data"
+DATA_DIR = "/data0/hernanqd/plots_code/skagit-met/data"
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
 PRISM_ROOT = os.path.join(VAULT_DIR, "prism_new_hq")
 DAYMET_ROOT = os.path.join(VAULT_DIR, "daymet_new_hq")
 BOUNDARY_PATH = os.path.join(BASE_DIR, "data/GIS/SkagitBoundary.json")
 SUBBASIN_PATH  = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
-OUT_DIR = os.path.join("/data0/hernanqd/plots_code/skagit_basin_de/spatial_plots/plots")
-HOURLY_MEANS_DIR = os.path.join("/data0/hernanqd/plots_code/skagit_basin_de/spatial_plots/hourly_means")
+OUT_DIR = os.path.join("/data0/hernanqd/plots_code/skagit-met/spatial_plots/plots")
+HOURLY_MEANS_DIR = os.path.join("/data0/hernanqd/plots_code/skagit-met/spatial_plots/hourly_means")
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(HOURLY_MEANS_DIR, exist_ok=True)
 

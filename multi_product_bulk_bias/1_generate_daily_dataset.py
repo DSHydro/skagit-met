@@ -22,7 +22,7 @@ HYDRO_H_PATH = os.path.join(EXP_DATA_DIR, "usgs_12200500_gage_height.rdb")
 # GRIDMET_DIR = "/data0/skagit_met/data_transfer/data/gridmet/"
 # SNOTEL_DATA_DIR = "/data0/skagit_met/data_transfer/data/snotel/"
 # PRISM_DATA_DIR = "/data0/skagit_met/data_transfer/data/prism_ppt/"
-OUTPUT_DIR = os.path.join("/data0/hernanqd/plots_code/skagit_basin_de/multi_product_bulk_bias/outputs")
+OUTPUT_DIR = os.path.join("/data0/hernanqd/plots_code/skagit-met/multi_product_bulk_bias/outputs")
 
 # ============================================================
 # LOADERS

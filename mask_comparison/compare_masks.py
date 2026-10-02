@@ -15,7 +15,7 @@ import geopandas as gpd
 import regionmask
 
 # Configuration
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met"
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
 
 HUC8_GEO = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")

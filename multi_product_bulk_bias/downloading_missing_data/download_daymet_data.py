@@ -31,7 +31,7 @@ var = "prcp"   # Precipitation
 # ============================================================================
 # VARIABLES - Spatial subset - Get bounding box from Skagit subbasins
 # ============================================================================
-BASE_DIR = "/data0/hernanqd/plots_code/skagit_basin_de"
+BASE_DIR = "/data0/hernanqd/plots_code/skagit-met"
 HUC8_GEO = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
 OUTPUT_DIR = "/data0/skagit_met/data_transfer/data/daymet_new_hq"
 
