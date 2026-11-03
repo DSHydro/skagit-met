@@ -267,25 +267,47 @@ def plot_shapes_comparison(gdf_huc8, gdf_boundary):
                     ax.plot(*poly.exterior.xy, linewidth=3, color=color, alpha=0.9, label=label)
 
             # Add region name as text at centroid
-            try:
-                centroid = geom.centroid
-                ax.text(centroid.x, centroid.y, region_name,
-                        fontsize=11, fontweight='bold', ha='center', va='center',
-                        bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.8, edgecolor=color, linewidth=2))
-            except:
-                pass
+            # try:
+            #     centroid = geom.centroid
+            #     ax.text(centroid.x, centroid.y, region_name,
+            #             fontsize=18, fontweight='bold', ha='center', va='center',
+            #             bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.8, edgecolor=color, linewidth=2))
+            # except:
+            #     pass
 
     # Plot boundary polygon
     gdf_boundary_plot = gdf_boundary.to_crs("EPSG:4326")
     gdf_boundary_plot.plot(ax=ax, facecolor='none', edgecolor='black',
                           linewidth=3.5, linestyle='--', label='Watershed Boundary', zorder=10)
 
-    ax.set_xlabel('Longitude', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Latitude', fontsize=12, fontweight='bold')
+    # Add discharge station
+    discharge_lat = 48.4450
+    discharge_lon = -122.3342
+    ax.plot(discharge_lon, discharge_lat, marker='*', markersize=25, color='red',
+            label='Discharge Station', zorder=15, markeredgecolor='darkred', markeredgewidth=2)
+
+    # Add AR stations
+    # ar_stations = [
+    #     ('ar_event_data_475_1245', 47.5, -124.5),
+    #     ('ar_event_data_480_1245', 48.0, -124.5),
+    #     ('ar_event_data_485_1245', 48.5, -124.5)
+    # ]
+    #
+    # for idx, (station_name, lat, lon) in enumerate(ar_stations):
+    #     if idx == 0:
+    #         ax.plot(lon, lat, marker='o', markersize=15, color='purple',
+    #                label='AR Stations', zorder=15, markeredgecolor='darkviolet', markeredgewidth=1.5)
+    #     else:
+    #         ax.plot(lon, lat, marker='o', markersize=15, color='purple',
+    #                zorder=15, markeredgecolor='darkviolet', markeredgewidth=1.5)
+
+    ax.set_xlabel('Longitude', fontsize=18, fontweight='bold')
+    ax.set_ylabel('Latitude', fontsize=18, fontweight='bold')
     ax.set_title('HUC8 Sub-basins (Upper Skagit, Sauk, Lower Skagit) vs Watershed Boundary',
-                 fontsize=14, fontweight='bold')
-    ax.legend(fontsize=11, loc='best', framealpha=0.95)
+                 fontsize=18, fontweight='bold')
+    ax.legend(fontsize=16, loc='best', framealpha=0.95)
     ax.grid(True, alpha=0.3, linestyle=':')
+    ax.tick_params(labelsize=14)
 
     plt.tight_layout()
     output_file = os.path.join(OUTPUT_DIR, 'shapes_comparison.png')

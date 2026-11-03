@@ -51,14 +51,25 @@ os.makedirs(OUT_DIR, exist_ok=True)
 #     {"label": "November_2009_AR0", "start": "2009-11-25", "end": "2009-11-27", "row_label": "Nov 25–27, 2009\n(AR0)"}
 # ]
 
+# AR_EVENTS = [
+#     {"label": "June_1985_AR0", "start": "1985-06-06", "end": "1985-06-08", "row_label": "Jun 6–8, 1985\n(AR0)"},
+#     {"label": "June_2020_AR0", "start": "2020-05-30", "end": "2020-06-01", "row_label": "May 30–Jun 1, 2020\n(AR0)"},
+#     {"label": "July_2022_AR0", "start": "2022-07-03", "end": "2022-07-05", "row_label": "Jul 3–5, 2022\n(AR0)"},
+#     {"label": "June_1997_AR0", "start": "1997-06-22", "end": "1997-06-24", "row_label": "Jun 22–24, 1997\n(AR0)"},
+#     {"label": "July_1982_AR0", "start": "1982-07-02", "end": "1982-07-04", "row_label": "Jul 2–4, 1982\n(AR0)"},
+#     {"label": "June_2002_AR0", "start": "2002-06-17", "end": "2002-06-19", "row_label": "Jun 17–19, 2002\n(AR0)"}
+# ]
+
+#5 day window taking the min
 AR_EVENTS = [
-    {"label": "June_1985_AR0", "start": "1985-06-06", "end": "1985-06-08", "row_label": "Jun 6–8, 1985\n(AR0)"},
-    {"label": "June_2020_AR0", "start": "2020-05-30", "end": "2020-06-01", "row_label": "May 30–Jun 1, 2020\n(AR0)"},
-    {"label": "July_2022_AR0", "start": "2022-07-03", "end": "2022-07-05", "row_label": "Jul 3–5, 2022\n(AR0)"},
-    {"label": "June_1997_AR0", "start": "1997-06-22", "end": "1997-06-24", "row_label": "Jun 22–24, 1997\n(AR0)"},
-    {"label": "July_1982_AR0", "start": "1982-07-02", "end": "1982-07-04", "row_label": "Jul 2–4, 1982\n(AR0)"},
-    {"label": "June_2002_AR0", "start": "2002-06-17", "end": "2002-06-19", "row_label": "Jun 17–19, 2002\n(AR0)"}
+    {"label": "April_1996_AR0", "start": "1996-04-23", "end": "1996-04-25", "row_label": "Apr 23–25, 1996\n(AR0)"},
+    {"label": "August_2004_AR0", "start": "2004-08-24", "end": "2004-08-26", "row_label": "Aug 24–26, 2004\n(AR0)"},
+    {"label": "December_2017_AR0", "start": "2017-12-28", "end": "2017-12-30", "row_label": "Dec 28–30, 2017\n(AR0)"},
+    {"label": "September_1997_AR0", "start": "1997-09-15", "end": "1997-09-17", "row_label": "Sep 15–17, 1997\n(AR0)"},
+    {"label": "February_2014_AR0", "start": "2014-02-15", "end": "2014-02-17", "row_label": "Feb 15–17, 2014\n(AR0)"},
+    {"label": "February_1982_AR0", "start": "1982-01-30", "end": "1982-02-01", "row_label": "Jan 30–Feb 1, 1982\n(AR0)"}
 ]
+
 
 PRODUCTS = ['PRISM', 'Daymet', 'PNNL', 'CONUS404', 'UCLA', 'GridMET'] #'ORNL (Daymet)', 'HRRR'
 

@@ -72,16 +72,27 @@ HYDRO_Q_PATH = os.path.join(HYDRO_EXP_DATA_DIR, "usgs_12200500_discharge.rdb")
 # 6/24/12
 # 7/4/12
 
-# 5-day window
+# # 5-day window
+# SPECIFIC_DATES = [
+#     '1985-06-08',
+#     '2020-06-01',
+#     '2022-07-05',
+#     '1997-06-24',
+#     # '1997-06-06',
+#     '1982-07-04',
+#     '2002-06-19',
+# ]
+
+# 5-day window, taking the min
 SPECIFIC_DATES = [
-    '1985-06-08',
-    '2020-06-01',
-    '2022-07-05',
-    '1997-06-24',
-    # '1997-06-06',
-    '1982-07-04',
-    '2002-06-19',
+    '1996-04-25',
+    '2004-08-26',
+    '2017-12-30',
+    '1997-09-17',
+    '2014-02-17',
+    '1982-02-01'
 ]
+
 
 # 6/8/85
 # 6/1/20
@@ -300,51 +311,68 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
     # Extract PNNL
     if 'pnnl' in products_to_extract and year <= 2020:
         try:
-            pnnl_path = os.path.join(VAULT_DIR, "PNNL/historical", str(year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc")
-            if os.path.exists(pnnl_path):
-                ds = xr.open_dataset(pnnl_path)
-                hourly_dates = []
-                for d in window_dates:
-                    hourly_dates.extend(pd.date_range(d, d + pd.Timedelta(hours=23), freq='h'))
-                available_hourly = [d for d in hourly_dates if d in ds.time.values]
-                if available_hourly and 'PNNL' in masks_2d:
-                    da_subset = ds['PREC_ACC_NC'].sel(time=available_hourly)
-                    s_hourly = calculate_basin_mean(da_subset, masks_2d['PNNL'])
-                    pnnl_daily = s_hourly.resample('1D').sum()
-                    pnnl_daily.index = pnnl_daily.index.normalize()
-                    for date in window_dates:
-                        normalized_date = date.normalize()
-                        if normalized_date in pnnl_daily.index:
-                            val = pnnl_daily[normalized_date]
-                            results[f'{date.strftime("%Y-%m-%d")}']['pnnl'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
-                ds.close()
+            pnnl_paths = [
+                os.path.join(VAULT_DIR, "PNNL/historical", str(year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc"),
+                os.path.join(VAULT_DIR, "PNNL/historical", str(year+1), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year+1}.nc")
+            ]
+            series_list = []
+            for pnnl_path in pnnl_paths:
+                if os.path.exists(pnnl_path):
+                    try:
+                        ds = xr.open_dataset(pnnl_path)
+                        hourly_dates = []
+                        for d in window_dates:
+                            hourly_dates.extend(pd.date_range(d, d + pd.Timedelta(hours=23), freq='h'))
+                        available_hourly = [d for d in hourly_dates if d in ds.time.values]
+                        if available_hourly and 'PNNL' in masks_2d:
+                            da_subset = ds['PREC_ACC_NC'].sel(time=available_hourly)
+                            s_hourly = calculate_basin_mean(da_subset, masks_2d['PNNL'])
+                            pnnl_daily = s_hourly.resample('1D').sum()
+                            pnnl_daily.index = pnnl_daily.index.normalize()
+                            series_list.append(pnnl_daily)
+                        ds.close()
+                    except:
+                        pass
+            if series_list:
+                pnnl_daily = pd.concat(series_list).sort_index()
+                pnnl_daily = pnnl_daily[~pnnl_daily.index.duplicated(keep='first')]
+                for date in window_dates:
+                    normalized_date = date.normalize()
+                    if normalized_date in pnnl_daily.index:
+                        val = pnnl_daily[normalized_date]
+                        results[f'{date.strftime("%Y-%m-%d")}']['pnnl'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
         except Exception as e:
             print(f"Error loading PNNL for {event_date.strftime('%Y-%m-%d')}: {e}")
 
     # Extract Daymet (new format - netCDF files)
     if 'daymet' in products_to_extract:
         try:
-            ds = load_daymet_from_netcdf(year)
-            if ds is not None:
-                ds['time'] = pd.to_datetime(ds.time.values).normalize()
-                da = ds['prcp']
+            series_list = []
+            for y in [year, year+1]:
+                ds = load_daymet_from_netcdf(y)
+                if ds is not None:
+                    ds['time'] = pd.to_datetime(ds.time.values).normalize()
+                    da = ds['prcp']
 
-                # Create Daymet mask dynamically if not cached
-                if 'Daymet' not in masks_2d:
-                    lon_2d = ds['lon'].values
-                    lat_2d = ds['lat'].values
-                    masks_2d['Daymet'] = get_mask(gdf, lon_2d, lat_2d).any(dim='region')
+                    # Create Daymet mask dynamically if not cached
+                    if 'Daymet' not in masks_2d:
+                        lon_2d = ds['lon'].values
+                        lat_2d = ds['lat'].values
+                        masks_2d['Daymet'] = get_mask(gdf, lon_2d, lat_2d).any(dim='region')
 
-                da_window = da.sel(time=window_dates, method='nearest')
-                daymet_daily = calculate_basin_mean(da_window, masks_2d['Daymet'])
-                daymet_daily.index = daymet_daily.index.normalize()
+                    da_window = da.sel(time=window_dates, method='nearest')
+                    daymet_daily = calculate_basin_mean(da_window, masks_2d['Daymet'])
+                    daymet_daily.index = daymet_daily.index.normalize()
+                    series_list.append(daymet_daily)
+                    ds.close()
+            if series_list:
+                daymet_daily = pd.concat(series_list).sort_index()
                 daymet_daily = daymet_daily[~daymet_daily.index.duplicated(keep='first')]
                 for date in window_dates:
                     normalized_date = date.normalize()
                     if normalized_date in daymet_daily.index:
                         val = daymet_daily[normalized_date]
                         results[f'{date.strftime("%Y-%m-%d")}']['daymet'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
-                ds.close()
         except Exception as e:
             print(f"Error loading Daymet for {event_date.strftime('%Y-%m-%d')}: {e}")
 
@@ -408,24 +436,32 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
     # Extract GridMET
     if 'gridmet' in products_to_extract:
         try:
-            gridmet_path = os.path.join(VAULT_DIR, f"gridmet/{year}_daily_4km_gridMET_data.zarr")
-            if os.path.exists(gridmet_path):
-                ds = xr.open_zarr(gridmet_path)
-                if 'day' in ds.dims:
-                    ds = ds.rename({'day': 'time'})
-                ds['time'] = pd.to_datetime(ds.time.values).normalize()
-                var = 'prcp' if 'prcp' in ds.data_vars else 'precipitation_amount'
-                da = ds[var].sel(time=window_dates, method='nearest')
-                if 'GridMET' in masks_2d:
-                    gridmet_daily = calculate_basin_mean(da, masks_2d['GridMET'])
-                    gridmet_daily.index = gridmet_daily.index.normalize()
-                    gridmet_daily = gridmet_daily[~gridmet_daily.index.duplicated(keep='first')]
-                    for date in window_dates:
-                        normalized_date = date.normalize()
-                        if normalized_date in gridmet_daily.index:
-                            val = gridmet_daily[normalized_date]
-                            results[f'{date.strftime("%Y-%m-%d")}']['gridmet'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
-                ds.close()
+            series_list = []
+            for y in [year, year+1]:
+                gridmet_path = os.path.join(VAULT_DIR, f"gridmet/{y}_daily_4km_gridMET_data.zarr")
+                if os.path.exists(gridmet_path):
+                    try:
+                        ds = xr.open_zarr(gridmet_path)
+                        if 'day' in ds.dims:
+                            ds = ds.rename({'day': 'time'})
+                        ds['time'] = pd.to_datetime(ds.time.values).normalize()
+                        var = 'prcp' if 'prcp' in ds.data_vars else 'precipitation_amount'
+                        da = ds[var].sel(time=window_dates, method='nearest')
+                        if 'GridMET' in masks_2d:
+                            gridmet_daily = calculate_basin_mean(da, masks_2d['GridMET'])
+                            gridmet_daily.index = gridmet_daily.index.normalize()
+                            series_list.append(gridmet_daily)
+                        ds.close()
+                    except:
+                        pass
+            if series_list:
+                gridmet_daily = pd.concat(series_list).sort_index()
+                gridmet_daily = gridmet_daily[~gridmet_daily.index.duplicated(keep='first')]
+                for date in window_dates:
+                    normalized_date = date.normalize()
+                    if normalized_date in gridmet_daily.index:
+                        val = gridmet_daily[normalized_date]
+                        results[f'{date.strftime("%Y-%m-%d")}']['gridmet'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
         except Exception as e:
             print(f"Error loading GridMET for {event_date.strftime('%Y-%m-%d')}: {e}")
 

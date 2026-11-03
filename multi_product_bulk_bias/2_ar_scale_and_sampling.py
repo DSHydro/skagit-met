@@ -37,14 +37,14 @@ def run_bulk_analysis():
     # Aggregated AR Scale logic
     scale_cols = [c for c in ar_df.columns if 'ar_scale_' in c]
     if scale_cols:
-        ar_df['ar_scale'] = ar_df[scale_cols].max(axis=1)
+        ar_df['ar_scale'] = ar_df[scale_cols].min(axis=1)
     elif 'ar_scale' not in ar_df.columns:
         ar_df['ar_scale'] = 0.0
 
     # 1.25 Remove non-AR dates within ±5 days of any AR event
     ar_dates = ar_df[ar_df['ar_scale'] > 0]['date'].values
 
-    def is_within_ar_window(date, ar_dates, window_days=3):
+    def is_within_ar_window(date, ar_dates, window_days=0):
         if len(ar_dates) == 0:
             return False
         date_np = np.datetime64(date)
@@ -53,7 +53,8 @@ def run_bulk_analysis():
 
     # Filter out non-AR dates within AR window
     non_ar_mask = ar_df['ar_scale'] == 0
-    non_ar_in_window = ar_df[non_ar_mask]['date'].apply(lambda d: is_within_ar_window(d, ar_dates))
+    non_ar_in_window = pd.Series(False, index=ar_df.index, dtype=bool)
+    non_ar_in_window.loc[non_ar_mask] = ar_df.loc[non_ar_mask, 'date'].apply(lambda d: is_within_ar_window(d, ar_dates)).values
     ar_df = ar_df[~(non_ar_mask & non_ar_in_window)]
 
     removed_count = non_ar_in_window.sum()

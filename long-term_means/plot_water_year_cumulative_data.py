@@ -42,7 +42,7 @@ def plot_water_year_cumulative():
 
     # Create separate plot for each geometry
     for geometry in geometries:
-        fig, ax = plt.subplots(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(18, 8))
 
         # Plot each product for this geometry
         for prod_idx, product in enumerate(products):
@@ -51,7 +51,7 @@ def plot_water_year_cumulative():
                 totals = df[col_name].dropna()
                 if len(totals) > 0:
                     ax.plot(totals.index, totals.values, label=product,
-                           marker=markers[prod_idx], linewidth=2.5, markersize=6,
+                           linewidth=2.5, markersize=6, #marker=markers[prod_idx], 
                            color=colors[prod_idx], alpha=0.85)
 
         ax.set_xlabel('Water Year', fontsize=11, fontweight='bold')
@@ -60,7 +60,7 @@ def plot_water_year_cumulative():
         ax.legend(loc='best', fontsize=10, ncol=2, framealpha=0.95)
         ax.grid(True, alpha=0.3, linestyle='--')
         if len(water_years) > 1:
-            ax.set_xticks(water_years[::max(1, len(water_years)//5)])
+            ax.set_xticks(water_years[::max(1, len(water_years)//10)])
         ax.tick_params(axis='x', rotation=45)
 
         plt.tight_layout()

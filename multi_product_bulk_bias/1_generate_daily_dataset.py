@@ -159,9 +159,9 @@ def main():
             print(f"Processing AR data for {p_name}...")
             ar_df = load_ar_events(fname)
             if ar_df.empty:
-                final_df[f'ar_scale_{p_name}'] = 0.0
+                final_df[f'ar_scale_{p_name}'] = np.nan
                 continue
-                
+
             daily_list = []
             for _, row in ar_df.iterrows():
                 if pd.isna(row['start_date']) or pd.isna(row['end_date']): continue
@@ -169,25 +169,27 @@ def main():
                 while curr <= row['end_date'].date():
                     daily_list.append({'date': pd.to_datetime(curr), f'ar_scale_{p_name}': row['ar_scale']})
                     curr += timedelta(days=1)
-            
-            if daily_list:
-                daily_max = pd.DataFrame(daily_list).groupby('date')[f'ar_scale_{p_name}'].max().reset_index()
-                final_df = pd.merge(final_df, daily_max, on='date', how='left').fillna({f'ar_scale_{p_name}': 0})
-            else:
-                final_df[f'ar_scale_{p_name}'] = 0.0
 
-    # # 4. Load Precipitation
-    # # PRISM (Breadth 1981-2024)
-    # prism_df = load_prism_precip()
-    # final_df = pd.merge(final_df, prism_df, on='date', how='left')
-    
-    # # GridMET (High detail 5 years)
-    # gridmet_df = load_gridmet_precip(1980, 2025)
-    # final_df = pd.merge(final_df, gridmet_df, on='date', how='left')
-    
-    # # SNOTEL (Local Archive 2014-2023)
-    # snotel_precip = load_local_snotel_precip()
-    # final_df = pd.merge(final_df, snotel_precip, on='date', how='left')
+            if daily_list:
+                daily_max = pd.DataFrame(daily_list).groupby('date')[f'ar_scale_{p_name}'].min().reset_index()
+                # REMOVED: .fillna({f'ar_scale_{p_name}': 0}) - only fill after all stations are processed
+                final_df = pd.merge(final_df, daily_max, on='date', how='left')
+            else:
+                final_df[f'ar_scale_{p_name}'] = np.nan
+
+    # Fill 0s for all days (including those with no ar_scale data in any site)
+    ar_scale_cols = [col for col in final_df.columns if col.startswith('ar_scale_')]
+    for col in ar_scale_cols:
+        final_df[col] = final_df[col].fillna(0)
+
+    # # Fill 0s only for days that have ar_scale data from at least one site
+    # ar_scale_cols = [col for col in final_df.columns if col.startswith('ar_scale_')]
+    # has_any_ar = final_df[ar_scale_cols].notna().any(axis=1)
+    # for col in ar_scale_cols:
+    #     final_df.loc[has_any_ar, col] = final_df.loc[has_any_ar, col].fillna(0)
+
+    # # 4b. Remove rows where all ar_scale columns are NaN
+    # final_df = final_df[~final_df[ar_scale_cols].isna().all(axis=1)]
 
     # 5. Save Final Dataset
     output_file = os.path.join(OUTPUT_DIR, "1_skagit_daily_integrated_dataset_1980_2025.csv")
