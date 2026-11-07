@@ -1,0 +1,14 @@
+{
+"type": "FeatureCollection",
+"name": "skagit_snotel_points",
+"features": [
+{ "type": "Feature", "properties": { "name": "Beaver Pass", "id": "990:WA:SNTL", "datasource": "NRCS" }, "geometry": { "type": "Point", "coordinates": [ -121.2555, 48.8793, 3630.0 ] } },
+{ "type": "Feature", "properties": { "name": "Marten Ridge", "id": "999:WA:SNTL", "datasource": "NRCS" }, "geometry": { "type": "Point", "coordinates": [ -121.69823, 48.76292, 3520.0 ] } },
+{ "type": "Feature", "properties": { "name": "Brown Top", "id": "1080:WA:SNTL", "datasource": "NRCS" }, "geometry": { "type": "Point", "coordinates": [ -121.19717, 48.92753, 5840.0 ] } },
+{ "type": "Feature", "properties": { "name": "Thunder Basin", "id": "817:WA:SNTL", "datasource": "NRCS" }, "geometry": { "type": "Point", "coordinates": [ -120.9895, 48.52753, 4310.0 ] } },
+{ "type": "Feature", "properties": { "name": "Swamp Creek", "id": "975:WA:SNTL", "datasource": "NRCS" }, "geometry": { "type": "Point", "coordinates": [ -120.78267, 48.57142, 3930.0 ] } },
+{ "type": "Feature", "properties": { "name": "Decline Creek", "id": "1319:WA:SNTL", "datasource": "NRCS" }, "geometry": { "type": "Point", "coordinates": [ -121.455, 48.23594, 4480.0 ] } },
+{ "type": "Feature", "properties": { "name": "Rainy Pass", "id": "711:WA:SNTL", "datasource": "NRCS" }, "geometry": { "type": "Point", "coordinates": [ -120.7358, 48.51865, 4880.0 ] } },
+{ "type": "Feature", "properties": { "name": "Easy Pass", "id": "998:WA:SNTL", "datasource": "NRCS" }, "geometry": { "type": "Point", "coordinates": [ -121.43895, 48.85933, 5280.0 ] } }
+]
+}

@@ -16,25 +16,33 @@ INPUT_CSV = os.path.join(BASE_DIR, "outputs/3_multi_product_bulk_bias_data.csv")
 OUTPUT_CSV = os.path.join(BASE_DIR, "outputs/3.75_events_with_prior_counts.csv")
 
 def count_prior_events(df):
-    """For each event, count events in the 30 days prior, including non-AR events (ar_scale=0)."""
+    """For each event, count events in the 7 and 30 days prior, including non-AR events (ar_scale=0)."""
     df = df.sort_values('date').reset_index(drop=True)
+    df['events_in_prior_7days'] = 0
     df['events_in_prior_30days'] = 0
+    df['non_ar_events_in_prior_7days'] = 0
     df['non_ar_events_in_prior_30days'] = 0
     df['days_to_prior_event'] = None
 
     for idx, row in df.iterrows():
         event_date = row['date']
-        # 30-day lookback window: T-30 to T-1 (not including T)
-        start_date = event_date - pd.Timedelta(days=30)
-        end_date = event_date - pd.Timedelta(days=1)
 
-        # Count all events in the prior 30-day window
-        prior_events = df[(df['date'] > start_date) & (df['date'] <= end_date)]
-        df.loc[idx, 'events_in_prior_30days'] = len(prior_events)
+        # 7-day lookback window: T-7 to T-1 (not including T)
+        start_date_7 = event_date - pd.Timedelta(days=7)
+        end_date = event_date - pd.Timedelta(days=1)
+        prior_events_7 = df[(df['date'] > start_date_7) & (df['date'] <= end_date)]
+        df.loc[idx, 'events_in_prior_7days'] = len(prior_events_7)
+        non_ar_events_7 = prior_events_7[prior_events_7['ar_scale'] == 0]
+        df.loc[idx, 'non_ar_events_in_prior_7days'] = len(non_ar_events_7)
+
+        # 30-day lookback window: T-30 to T-1 (not including T)
+        start_date_30 = event_date - pd.Timedelta(days=30)
+        prior_events_30 = df[(df['date'] > start_date_30) & (df['date'] <= end_date)]
+        df.loc[idx, 'events_in_prior_30days'] = len(prior_events_30)
 
         # Count non-AR events (ar_scale = 0) in the prior 30-day window
-        non_ar_events = prior_events[prior_events['ar_scale'] == 0]
-        df.loc[idx, 'non_ar_events_in_prior_30days'] = len(non_ar_events)
+        non_ar_events_30 = prior_events_30[prior_events_30['ar_scale'] == 0]
+        df.loc[idx, 'non_ar_events_in_prior_30days'] = len(non_ar_events_30)
 
         # Find days to the most recent prior event
         if idx > 0:
@@ -56,6 +64,16 @@ if __name__ == "__main__":
 
     print("\nSummary:")
     print(f"Total events: {len(df)}")
+    print(f"\nAll events in prior 7 days:")
+    print(f"  Events with prior events: {(df['events_in_prior_7days'] > 0).sum()}")
+    print(f"  Events with no prior events: {(df['events_in_prior_7days'] == 0).sum()}")
+    print(f"  Distribution:")
+    print(df['events_in_prior_7days'].value_counts().sort_index())
+    print(f"\nNon-AR events (ar_scale=0) in prior 7 days:")
+    print(f"  Events with prior non-AR events: {(df['non_ar_events_in_prior_7days'] > 0).sum()}")
+    print(f"  Events with no prior non-AR events: {(df['non_ar_events_in_prior_7days'] == 0).sum()}")
+    print(f"  Distribution:")
+    print(df['non_ar_events_in_prior_7days'].value_counts().sort_index())
     print(f"\nAll events in prior 30 days:")
     print(f"  Events with prior events: {(df['events_in_prior_30days'] > 0).sum()}")
     print(f"  Events with no prior events: {(df['events_in_prior_30days'] == 0).sum()}")
