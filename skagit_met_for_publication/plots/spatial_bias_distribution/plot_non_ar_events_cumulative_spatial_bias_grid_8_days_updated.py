@@ -596,8 +596,16 @@ def main():
     print(f"Bias color range: {vmin_bias}–{vmax_bias} mm")
 
     # Plot grid: 6 rows × 5 columns (bias relative to PRISM)
+    # Publication font sizes (figure is ~15 in wide; expect ~0.45x reduction to journal page width)
+    FONT_SUPTITLE = 24
+    FONT_TITLE = 18       # column titles
+    FONT_ROW_LABEL = 18
+    FONT_CBAR_LABEL = 18
+    FONT_CBAR_TICK = 16
+    FONT_NA = 16
+
     plt.rcParams.update({
-        'font.size': 13,
+        'font.size': FONT_CBAR_LABEL,
         'font.family': 'sans-serif',
         'font.sans-serif': ['DejaVu Sans', 'Arial'],
     })
@@ -640,7 +648,7 @@ def main():
                 # Grey placeholder if product missing
                 ax.set_facecolor('#dddddd')
                 ax.text(0.5, 0.5, 'N/A', transform=ax.transAxes,
-                        ha='center', va='center', fontsize=12, color='#555555')
+                        ha='center', va='center', fontsize=FONT_NA, color='#555555')
 
             ax.set_extent(MAP_EXTENT, crs=ccrs.PlateCarree())
             ax.add_feature(cfeature.COASTLINE.with_scale('10m'), linewidth=0.6, edgecolor='#444444')
@@ -656,20 +664,20 @@ def main():
             # Row label on the first column
             if col_idx == 0:
                 ax.text(-0.25, 0.5, event['row_label'], transform=ax.transAxes,
-                        fontsize=16, fontweight='bold', va='center', ha='right')
+                        fontsize=FONT_ROW_LABEL, fontweight='bold', va='center', ha='right')
 
         # Column titles on the first row
         if row_idx == 0:
             for col_idx, prod in enumerate(BIAS_PRODUCTS):
                 label = f"{prod} - PRISM"
-                axes[0, col_idx].set_title(label, fontsize=16, fontweight='bold', pad=12)
+                axes[0, col_idx].set_title(label, fontsize=FONT_TITLE, fontweight='bold', pad=12)
 
     # Colorbar at the bottom of the grid
     if im is not None:
         cbar_ax = fig.add_axes([0.30, 0.05, 0.40, 0.02])
         cbar = fig.colorbar(im, cax=cbar_ax, orientation='horizontal',
                             label="Bias relative to PRISM (mm)")
-        cbar.ax.tick_params(labelsize=13)
+        cbar.ax.tick_params(labelsize=FONT_CBAR_TICK)
 
     plt.subplots_adjust(left=0.08, right=0.98, top=0.88, bottom=0.10, wspace=0.05, hspace=0.08)
 
@@ -684,7 +692,7 @@ def main():
         "Bias in Cumulative Precipitation during Non-Atmospheric River Events\n"
         "Multi-Product Comparison (Bias relative to PRISM)\n"
         "(Non-AR Event Day: 2 days after period start)",
-        fontsize=22, fontweight='bold', y=0.97
+        fontsize=FONT_SUPTITLE, fontweight='bold', y=0.99
     )
 
     out_png = os.path.join(OUT_DIR, "non_ar_events_cumulative_spatial_bias_grid_8_days.png")

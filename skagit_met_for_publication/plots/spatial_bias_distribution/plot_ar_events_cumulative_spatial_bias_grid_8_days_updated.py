@@ -51,8 +51,8 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 AR_EVENTS = [
     {"label": "November_1990_AR5",   "start": "1990-11-22", "end": "1990-11-29", "row_label": "Nov 22–29, 1990\n(AR5)"},
-    {"label": "November_1995_AR4",  "start": "1995-11-27", "end": "1995-12-04", "row_label": "Nov 27–Dec 4, 1995\n(AR4)"},
-    {"label": "November_1990_AR4",  "start": "1990-11-08", "end": "1990-11-15", "row_label": "Nov 8–15, 1990\n(AR4)"},
+    {"label": "November_1995_AR4",  "start": "1995-11-28", "end": "1995-12-05", "row_label": "Nov 28–Dec 5, 1995\n(AR4)"}, #{"label": "November_1995_AR4",  "start": "1995-11-27", "end": "1995-12-04", "row_label": "Nov 27–Dec 4, 1995\n(AR4)"},
+    {"label": "November_1990_AR4",  "start": "1990-11-11", "end": "1990-11-18", "row_label": "Nov 11–18, 1990\n(AR4)"}, #{"label": "November_1990_AR4",  "start": "1990-11-08", "end": "1990-11-15", "row_label": "Nov 8–15, 1990\n(AR4)"},
     {"label": "November_2006_AR5",  "start": "2006-11-05", "end": "2006-11-12", "row_label": "Nov 5–12, 2006\n(AR5)"},
     {"label": "October_2003_AR5",  "start": "2003-10-19", "end": "2003-10-26", "row_label": "Oct 19–26, 2003\n(AR5)"},
     {"label": "November_2021_AR4",  "start": "2021-11-13", "end": "2021-11-20", "row_label": "Nov 13–20, 2021\n(AR4)"}
@@ -599,8 +599,16 @@ def main():
     print(f"Bias color range: {vmin_bias}–{vmax_bias} mm")
 
     # Plot grid: 6 rows × 5 columns (bias relative to PRISM)
+    # Publication font sizes (figure is ~15 in wide; expect ~0.45x reduction to journal page width)
+    FONT_SUPTITLE = 24
+    FONT_TITLE = 18       # column titles
+    FONT_ROW_LABEL = 18
+    FONT_CBAR_LABEL = 18
+    FONT_CBAR_TICK = 16
+    FONT_NA = 16
+
     plt.rcParams.update({
-        'font.size': 13,
+        'font.size': FONT_CBAR_LABEL,
         'font.family': 'sans-serif',
         'font.sans-serif': ['DejaVu Sans', 'Arial'],
     })
@@ -647,7 +655,7 @@ def main():
                 # Grey placeholder if product missing
                 ax.set_facecolor('#dddddd')
                 ax.text(0.5, 0.5, 'N/A', transform=ax.transAxes,
-                        ha='center', va='center', fontsize=12, color='#555555')
+                        ha='center', va='center', fontsize=FONT_NA, color='#555555')
 
             ax.set_extent(MAP_EXTENT, crs=ccrs.PlateCarree())
             ax.add_feature(cfeature.COASTLINE.with_scale('10m'), linewidth=0.6, edgecolor='#444444')
@@ -663,20 +671,20 @@ def main():
             # Row label on the first column
             if col_idx == 0:
                 ax.text(-0.25, 0.5, event['row_label'], transform=ax.transAxes,
-                        fontsize=16, fontweight='bold', va='center', ha='right')
+                        fontsize=FONT_ROW_LABEL, fontweight='bold', va='center', ha='right')
 
         # Column titles on the first row
         if row_idx == 0:
             for col_idx, prod in enumerate(BIAS_PRODUCTS):
                 label = f"{prod} - PRISM"
-                axes[0, col_idx].set_title(label, fontsize=16, fontweight='bold', pad=12)
+                axes[0, col_idx].set_title(label, fontsize=FONT_TITLE, fontweight='bold', pad=12)
 
     # Colorbar at the bottom of the grid
     if im is not None:
         cbar_ax = fig.add_axes([0.30, 0.05, 0.40, 0.02])
         cbar = fig.colorbar(im, cax=cbar_ax, orientation='horizontal',
                             label="Bias relative to PRISM (mm)")
-        cbar.ax.tick_params(labelsize=13)
+        cbar.ax.tick_params(labelsize=FONT_CBAR_TICK)
 
     plt.subplots_adjust(left=0.08, right=0.98, top=0.88, bottom=0.10, wspace=0.05, hspace=0.08)
 
@@ -691,7 +699,7 @@ def main():
         "Bias in Cumulative Precipitation during Atmospheric River Events\n"
         "Multi-Product Comparison (Bias relative to PRISM)\n"
         "(AR Event Day: 2 days after period start)",
-        fontsize=22, fontweight='bold', y=0.97
+        fontsize=FONT_SUPTITLE, fontweight='bold', y=0.99
     )
 
     out_png = os.path.join(OUT_DIR, "ar_events_cumulative_spatial_bias_grid_8_days.png")

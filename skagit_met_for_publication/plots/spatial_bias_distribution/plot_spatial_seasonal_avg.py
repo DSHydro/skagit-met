@@ -575,8 +575,15 @@ def main():
     
     # 7. Generate Figure 1: Products
     print("Plotting direct products...")
+    # Publication font sizes (figures are 16-18 in wide; expect ~0.4x reduction to journal page width)
+    FONT_SUPTITLE = 24
+    FONT_TITLE = 18       # column titles
+    FONT_ROW_LABEL = 20
+    FONT_CBAR_LABEL = 18
+    FONT_CBAR_TICK = 16
+
     plt.rcParams.update({
-        'font.size': 13,
+        'font.size': FONT_CBAR_LABEL,
         'font.family': 'sans-serif',
         'font.sans-serif': ['DejaVu Sans', 'Arial']
     })
@@ -610,23 +617,23 @@ def main():
             # Row label on first column
             if col_idx == 0:
                 ax.text(-0.25, 0.5, s_name, transform=ax.transAxes,
-                        fontsize=16, fontweight='bold', va='center', ha='right')
+                        fontsize=FONT_ROW_LABEL, fontweight='bold', va='center', ha='right')
                 
         # Column titles
         if row_idx == 0:
             for col_idx, prod in enumerate(products):
                 label = "ORNL (Daymet)" if prod == "ORNL" else prod
-                axes1[0, col_idx].set_title(f"{label}\n(1981–2019)", fontsize=15, fontweight='bold', pad=12)
+                axes1[0, col_idx].set_title(f"{label}\n(1981–2019)", fontsize=FONT_TITLE, fontweight='bold', pad=12)
                 
     # Add colorbar at bottom of Fig 1
     cbar_ax1 = fig1.add_axes([0.30, 0.05, 0.40, 0.025])
     cbar1 = fig1.colorbar(im_precip, cax=cbar_ax1, orientation='horizontal',
                          label="Average Seasonal Precipitation (mm/day)")
-    cbar1.ax.tick_params(labelsize=12)
+    cbar1.ax.tick_params(labelsize=FONT_CBAR_TICK)
     
     plt.subplots_adjust(left=0.08, right=0.98, top=0.84, bottom=0.10, wspace=0.05, hspace=0.08)
     plt.suptitle("Spatial Distribution of Seasonal Average Precipitation\nMulti-Product Comparison (1981–2019; PRISM 4km reference)",
-                 fontsize=22, fontweight='bold', y=0.97)
+                 fontsize=FONT_SUPTITLE, fontweight='bold', y=0.98)
 
     print(f"Saving Products map to {OUT_PRODUCTS_IMG}...")
     plt.savefig(OUT_PRODUCTS_IMG, dpi=300, bbox_inches='tight')
@@ -663,23 +670,23 @@ def main():
             # Row label on first column
             if col_idx == 0:
                 ax.text(-0.25, 0.5, s_name, transform=ax.transAxes,
-                        fontsize=16, fontweight='bold', va='center', ha='right')
+                        fontsize=FONT_ROW_LABEL, fontweight='bold', va='center', ha='right')
 
         # Column titles
         if row_idx == 0:
             for col_idx, b in enumerate(biases):
                 label = f"{b} - PRISM"
-                axes2[0, col_idx].set_title(f"{label}\n(1981–2019)", fontsize=15, fontweight='bold', pad=12)
+                axes2[0, col_idx].set_title(f"{label}\n(1981–2019)", fontsize=FONT_TITLE, fontweight='bold', pad=12)
 
     # Add colorbar at bottom of Fig 2
     cbar_ax2 = fig2.add_axes([0.30, 0.05, 0.40, 0.025])
     cbar2 = fig2.colorbar(im_diff, cax=cbar_ax2, orientation='horizontal',
                          label="Precipitation Bias relative to PRISM (Product - PRISM, mm/day)")
-    cbar2.ax.tick_params(labelsize=12)
+    cbar2.ax.tick_params(labelsize=FONT_CBAR_TICK)
 
     plt.subplots_adjust(left=0.08, right=0.98, top=0.84, bottom=0.10, wspace=0.05, hspace=0.08)
     plt.suptitle("Spatial Distribution of Seasonal Average Precipitation Biases\nProduct minus PRISM Baseline (1981–2019; PRISM 4km reference)",
-                 fontsize=22, fontweight='bold', y=0.97)
+                 fontsize=FONT_SUPTITLE, fontweight='bold', y=0.98)
 
     print(f"Saving Biases map to {OUT_BIASES_IMG}...")
     plt.savefig(OUT_BIASES_IMG, dpi=300, bbox_inches='tight')
