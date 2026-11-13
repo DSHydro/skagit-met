@@ -1,0 +1,21 @@
+Region,Dataset,PRISM mean (mm),Dataset mean (mm),Mean Bias (mm),%Bias
+Full Skagit,Daymet,2323.1,2076.2,246.9,10.6
+Full Skagit,gridMET,2323.1,2418.9,-95.9,-4.1
+Full Skagit,UCLA,2323.1,2419.2,-96.1,-4.1
+Full Skagit,PNNL hist,2323.1,2338.0,-14.9,-0.6
+Full Skagit,CONUS 404,2323.1,2179.6,143.5,6.2
+Upper Skagit,Daymet,2242.5,2034.7,207.8,9.3
+Upper Skagit,gridMET,2242.5,2275.6,-33.1,-1.5
+Upper Skagit,UCLA,2242.5,2488.8,-246.3,-11.0
+Upper Skagit,PNNL hist,2242.5,2364.0,-121.5,-5.4
+Upper Skagit,CONUS 404,2242.5,2177.9,64.6,2.9
+Sauk,Daymet,2654.1,2258.2,395.8,14.9
+Sauk,gridMET,2654.1,2719.7,-65.6,-2.5
+Sauk,UCLA,2654.1,2751.0,-97.0,-3.7
+Sauk,PNNL hist,2654.1,2596.4,57.7,2.2
+Sauk,CONUS 404,2654.1,2458.1,196.0,7.4
+Lower Skagit,Daymet,2090.7,1965.7,125.1,6.0
+Lower Skagit,gridMET,2090.7,2497.0,-406.2,-19.4
+Lower Skagit,UCLA,2090.7,1649.5,441.3,21.1
+Lower Skagit,PNNL hist,2090.7,1736.4,354.4,16.9
+Lower Skagit,CONUS 404,2090.7,1681.5,409.2,19.6

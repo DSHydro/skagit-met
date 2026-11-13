@@ -1,35 +1,84 @@
-"""Generate an integrated daily dataset combining hydrology and atmospheric river event data.
+"""Generate an integrated daily dataset combining hydrology and atmospheric river (AR) data.
 
-Creates a timeline-based dataset (1980-2025) by merging USGS discharge/gage height data
-with atmospheric river event classifications from three monitoring stations (47.5N_124.5W,
-48.0N_124.5W, 48.5N_124.5W). Outputs a CSV with daily records suitable for bias analysis.
+Builds a continuous daily timeline (1980-01-01 to 2025-12-31) and merges:
+
+* USGS gage 12200500 (Skagit River near Mount Vernon, WA): daily mean
+  discharge [cfs] and gage height [ft].
+* AR event catalogs at three coastal grid points (47.5N, 48.0N and 48.5N
+  at 124.5W). Each event is assigned to every calendar day from its start
+  date to its end date (inclusive). If two or more events overlap on the
+  same day, the minimum AR scale is kept. Days with no AR are set to 0.
+
+Inputs (in ``<BASE_DIR>/data``):
+    usgs_12200500_discharge.rdb     USGS daily values, parameter 00060
+    usgs_12200500_gage_height.rdb   USGS daily values, parameter 00065
+    ar_event_data_<point_id>.csv    AR event catalog, one file per grid point
+
+Output (in ``<BASE_DIR>/analysis/outputs``):
+    1_skagit_daily_integrated_dataset_1980_2025.csv
+        date, discharge_cfs, gage_height_ft,
+        ar_scale_47.5N_124.5W, ar_scale_48.0N_124.5W, ar_scale_48.5N_124.5W
+
+Usage:
+    python 1_generate_daily_dataset.py
 """
 
 import os
-import pandas as pd
+from datetime import timedelta
+
 import numpy as np
-import xarray as xr
-from datetime import datetime, timedelta
-import glob
+import pandas as pd
 
 # ============================================================
 # PATHS
 # ============================================================
-# BASE_DIR = "/data0/nksp2/skagit/skagit_2/skagit-met"
-BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication"
+# Project root = parent of the folder containing this script (i.e. skagit_met_for_publication/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXP_DATA_DIR = os.path.join(BASE_DIR, "data")
 HYDRO_Q_PATH = os.path.join(EXP_DATA_DIR, "usgs_12200500_discharge.rdb")
 HYDRO_H_PATH = os.path.join(EXP_DATA_DIR, "usgs_12200500_gage_height.rdb")
-# GRIDMET_DIR = "/data0/skagit_met/data_transfer/data/gridmet/"
-# SNOTEL_DATA_DIR = "/data0/skagit_met/data_transfer/data/snotel/"
-# PRISM_DATA_DIR = "/data0/skagit_met/data_transfer/data/prism_ppt/"
 OUTPUT_DIR = os.path.join(BASE_DIR, "analysis/outputs")
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, "1_skagit_daily_integrated_dataset_1980_2025.csv")
+
+# ============================================================
+# SETTINGS
+# ============================================================
+START_DATE = "1980-01-01"
+END_DATE = "2025-12-31"
+
+# AR event file ID -> grid point label used in output column names
+AR_POINTS = {
+    '475_1245': '47.5N_124.5W',
+    '480_1245': '48.0N_124.5W',
+    '485_1245': '48.5N_124.5W'
+}
+
+# Column names of the AR event files (files have no header row)
+AR_COLUMNS = [
+    'start_date_str', 'max_date_str', 'end_date_str', 'duration',
+    'max_ivt', 'ar_scale', 'avg_ivt', 'max_ivt_dir', 'avg_ivt_dir',
+    'max_iwv', 'avg_iwv', 'avg_uivt', 'avg_vivt'
+]
 
 # ============================================================
 # LOADERS
 # ============================================================
 
 def load_usgs_rdb(filepath, param_name):
+    """Read a USGS daily-values RDB (tab-delimited) file.
+
+    Parameters
+    ----------
+    filepath : str
+        Path to the RDB file.
+    param_name : str
+        Name given to the value column in the returned DataFrame.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns ['date', param_name]. Non-numeric values become NaN.
+    """
     print(f"Loading {param_name} from {filepath}...")
     try:
         df = pd.read_csv(filepath, sep='\t', comment='#')
@@ -47,13 +96,21 @@ def load_usgs_rdb(filepath, param_name):
         return pd.DataFrame(columns=['date', param_name])
 
 def load_ar_events(filepath):
-    cols = [
-        'start_date_str', 'max_date_str', 'end_date_str', 'duration', 
-        'max_ivt', 'ar_scale', 'avg_ivt', 'max_ivt_dir', 'avg_ivt_dir', 
-        'max_iwv', 'avg_iwv', 'avg_uivt', 'avg_vivt'
-    ]
+    """Read an AR event catalog (CSV without header).
+
+    Parameters
+    ----------
+    filepath : str
+        Path to the AR event file; columns are given by AR_COLUMNS.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per AR event, with the start/peak/end times (YYYYMMDDHH)
+        also parsed into datetime columns 'start_date', 'max_date', 'end_date'.
+    """
     try:
-        df = pd.read_csv(filepath, names=cols)
+        df = pd.read_csv(filepath, names=AR_COLUMNS)
         for c in ['start_date_str', 'max_date_str', 'end_date_str']:
             df[c.replace('_str', '')] = pd.to_datetime(df[c], format='%Y%m%d%H', errors='coerce')
         return df
@@ -61,84 +118,16 @@ def load_ar_events(filepath):
         print(f"  Error loading AR data {filepath}: {e}")
         return pd.DataFrame()
 
-# def load_gridmet_precip(start_year, end_year):
-#     print(f"Loading GridMET precipitation...")
-#     datasets = []
-#     for yr in range(start_year, end_year + 1):
-#         fpath = os.path.join(GRIDMET_DIR, f"pr_{yr}.nc")
-#         if os.path.exists(fpath):
-#             try:
-#                 ds = xr.open_dataset(fpath)
-#                 if 'day' in ds.coords:
-#                     ds = ds.rename({'day': 'time'})
-#                 datasets.append(ds['precipitation_amount'])
-#             except Exception as e:
-#                 print(f"  Error loading {fpath}: {e}")
-    
-#     if not datasets:
-#         return pd.DataFrame(columns=['date', 'gridmet_precip_mm'])
-    
-#     combined = xr.concat(datasets, dim='time')
-#     basin_mean = combined.mean(dim=['lat', 'lon']).to_dataframe().reset_index()
-#     basin_mean = basin_mean.rename(columns={'time': 'date', 'precipitation_amount': 'gridmet_precip_mm'})
-#     basin_mean['date'] = pd.to_datetime(basin_mean['date']).dt.tz_localize(None)
-#     return basin_mean
-
-# def load_prism_precip():
-#     print(f"Loading PRISM precipitation from {PRISM_DATA_DIR}...")
-#     all_dfs = []
-#     # Match sequential blocks and yearly blocks
-#     zarr_paths = glob.glob(os.path.join(PRISM_DATA_DIR, "*PRISM_data.zarr"))
-#     for zp in sorted(zarr_paths):
-#         try:
-#             ds = xr.open_zarr(zp)
-#             if 'ppt' in ds.data_vars:
-#                 # Average over basin (lat/lon)
-#                 df = ds['ppt'].mean(dim=['lat', 'lon']).to_dataframe().reset_index()
-#                 df = df.rename(columns={'time': 'date', 'ppt': 'prism_precip_mm'})
-#                 df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
-#                 all_dfs.append(df[['date', 'prism_precip_mm']])
-#         except Exception as e:
-#             print(f"  Warning: Could not open {zp}: {e}")
-    
-#     if not all_dfs:
-#         return pd.DataFrame(columns=['date', 'prism_precip_mm'])
-    
-#     combined = pd.concat(all_dfs)
-#     basin_avg = combined.groupby('date')['prism_precip_mm'].mean().reset_index()
-#     return basin_avg
-
-# def load_local_snotel_precip():
-#     print(f"Loading local SNOTEL zarrs...")
-#     all_dfs = []
-#     zarr_paths = glob.glob(os.path.join(SNOTEL_DATA_DIR, "*SNOTEL_daily_data.zarr"))
-#     for zp in sorted(zarr_paths):
-#         try:
-#             ds = xr.open_zarr(zp)
-#             if 'PRECIPITATION' in ds.data_vars:
-#                 df = ds['PRECIPITATION'].mean(dim='site').to_dataframe().reset_index()
-#                 df = df.rename(columns={'time': 'date', 'PRECIPITATION': 'snotel_precip_in'})
-#                 df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
-#                 all_dfs.append(df[['date', 'snotel_precip_in']])
-#         except Exception as e:
-#             pass
-    
-#     if not all_dfs:
-#         return pd.DataFrame(columns=['date', 'snotel_precip_in'])
-    
-#     combined = pd.concat(all_dfs)
-#     basin_avg = combined.groupby('date')['snotel_precip_in'].mean().reset_index()
-#     return basin_avg
-
 # ============================================================
 # MAIN
 # ============================================================
 
 def main():
+    """Build the integrated daily dataset and save it to OUTPUT_FILE."""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
-    # 1. Create Base Timeline (1980-2025)
-    dates = pd.date_range(start="1980-01-01", end="2025-12-31", freq='D')
+    # 1. Create Base Timeline
+    dates = pd.date_range(start=START_DATE, end=END_DATE, freq='D')
     final_df = pd.DataFrame({'date': dates})
 
     # 2. Load Hydrology
@@ -148,13 +137,7 @@ def main():
     final_df = pd.merge(final_df, hydro_df, on='date', how='left')
 
     # 3. Load AR Data by Station
-    points = {
-        '475_1245': '47.5N_124.5W',
-        '480_1245': '48.0N_124.5W',
-        '485_1245': '48.5N_124.5W'
-    }
-    
-    for p_id, p_name in points.items():
+    for p_id, p_name in AR_POINTS.items():
         fname = os.path.join(EXP_DATA_DIR, f"ar_event_data_{p_id}.csv")
         if os.path.exists(fname):
             print(f"Processing AR data for {p_name}...")
@@ -172,9 +155,9 @@ def main():
                     curr += timedelta(days=1)
 
             if daily_list:
-                daily_max = pd.DataFrame(daily_list).groupby('date')[f'ar_scale_{p_name}'].min().reset_index()
-                # REMOVED: .fillna({f'ar_scale_{p_name}': 0}) - only fill after all stations are processed
-                final_df = pd.merge(final_df, daily_max, on='date', how='left')
+                # If events overlap on the same day, keep the minimum AR scale
+                daily_ar = pd.DataFrame(daily_list).groupby('date')[f'ar_scale_{p_name}'].min().reset_index()
+                final_df = pd.merge(final_df, daily_ar, on='date', how='left')
             else:
                 final_df[f'ar_scale_{p_name}'] = np.nan
 
@@ -183,29 +166,16 @@ def main():
     for col in ar_scale_cols:
         final_df[col] = final_df[col].fillna(0)
 
-    # # Fill 0s only for days that have ar_scale data from at least one site
-    # ar_scale_cols = [col for col in final_df.columns if col.startswith('ar_scale_')]
-    # has_any_ar = final_df[ar_scale_cols].notna().any(axis=1)
-    # for col in ar_scale_cols:
-    #     final_df.loc[has_any_ar, col] = final_df.loc[has_any_ar, col].fillna(0)
+    # 4. Save Final Dataset
+    final_df.to_csv(OUTPUT_FILE, index=False)
 
-    # # 4b. Remove rows where all ar_scale columns are NaN
-    # final_df = final_df[~final_df[ar_scale_cols].isna().all(axis=1)]
-
-    # 5. Save Final Dataset
-    output_file = os.path.join(OUTPUT_DIR, "1_skagit_daily_integrated_dataset_1980_2025.csv")
-    final_df.to_csv(output_file, index=False)
-    
-    print(f"\nFinal dataset created successfully: {output_file}")
+    print(f"\nFinal dataset created successfully: {OUTPUT_FILE}")
     print(f"Columns: {final_df.columns.tolist()}")
     print(f"Total rows: {len(final_df)}")
     
     # Quick sanity check
     print(f"Data Presence:")
     print(f"  Q: {final_df['discharge_cfs'].count()} rows")
-    # print(f"  PRISM: {final_df['prism_precip_mm'].count()} rows")
-    # print(f"  GridMET: {final_df['gridmet_precip_mm'].count()} rows")
-    # print(f"  SNOTEL: {final_df['snotel_precip_in'].count()} rows")
 
 if __name__ == "__main__":
     main()

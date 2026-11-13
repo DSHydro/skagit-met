@@ -1,88 +1,85 @@
-"""Extract and plot cumulative precipitation for specific non-AR events in the Skagit Basin.
+"""Cumulative precipitation of six products during selected non-AR events.
 
-Loads precipitation data from multiple sources (PRISM, PNNL, Daymet, CONUS404, UCLA, GridMET),
-computes basin-averaged values for an 8-day window around each event date (T-3 to T+5),
-and generates comparison plots showing cumulative precipitation curves overlaid with discharge data.
+For each event in ``SPECIFIC_DATES``, daily basin-mean precipitation over the
+Skagit Basin (Upper Skagit, Sauk and Lower Skagit HUC8 sub-basins) is
+extracted from six gridded products (PRISM, PNNL, Daymet, CONUS404, UCLA,
+GridMET) for a 9-day window (T-3 to T+5), and the cumulative totals are
+plotted in a 3x2 panel figure. Each panel title gives the event's AR scale
+and the peak USGS 12200500 discharge in the window. All panels share the same
+y-axis range.
+
+Input
+    /data0/skagit_met/data_transfer/data/...      (gridded precipitation products)
+    data/GIS/SkagitSubBasin_HUC8.geojson
+    data/weather_data/conus404_skagit_precip_daily_full.zarr
+    data/usgs_12200500_discharge.rdb
+    analysis/outputs/5day_taking_min/3_multi_product_bulk_bias_data.csv
+Output
+    plots/plot_specific_ar_and_non_ar_events/specific_non_ar_events_cumulative_precipitation.png
+
+Usage
+    python plot_specific_non_ar_events.py
 """
 
 import os
-import pandas as pd
-import matplotlib.pyplot as plt
-import xarray as xr
-import numpy as np
-import geopandas as gpd
-import regionmask
-import zipfile
 import tempfile
+import zipfile
+from pathlib import Path
+
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import regionmask
 import rioxarray
+import xarray as xr
 
-# Configuration
+# Shared raw-data archive (outside this repository)
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication"
-HUC8_GEO = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
-EVENTS_CSV = os.path.join(BASE_DIR, "analysis/outputs/4_clean_bias_table.csv")
-OUTPUT_DIR = os.path.join(BASE_DIR, "plots/plot_specific_ar_and_non_ar_events")
 
-# Hydrology data paths
-HYDRO_EXP_DATA_DIR = os.path.join(BASE_DIR, "data")
-HYDRO_Q_PATH = os.path.join(HYDRO_EXP_DATA_DIR, "usgs_12200500_discharge.rdb")
+# Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
+BASE_DIR = Path(__file__).resolve().parents[2]
+HUC8_GEO = BASE_DIR / "data" / "GIS" / "SkagitSubBasin_HUC8.geojson"
+# Event table from the "5-day window, taking the min" run (used for the AR scale in panel titles)
+EVENTS_CSV = BASE_DIR / "analysis" / "outputs" / "5day_taking_min" / "3_multi_product_bulk_bias_data.csv"
+HYDRO_Q_PATH = BASE_DIR / "data" / "usgs_12200500_discharge.rdb"
+OUTPUT_DIR = Path(__file__).resolve().parent
 
-# Specific event dates to plot
-# SPECIFIC_DATES = [
-#     # '2021-11-16',
-#     '1995-12-02',
-#     # '1990-11-14',
-#     '2011-01-18',
-#     '2015-11-14',
-#     '2007-03-13',
-#     # '2021-12-03',
-#     '2010-12-14',
-#     '2009-11-27',
-# ]
+# Precipitation product locations
+PRISM_DIR = os.path.join(VAULT_DIR, "prism_new_hq")  # daily TIFF zips, by decade folder
+DAYMET_DIR = os.path.join(VAULT_DIR, "daymet_new_hq")  # prcp_<year>_subset.nc
+PNNL_DIR = os.path.join(VAULT_DIR, "PNNL/historical")  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
+PNNL_GEO = os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc")  # PNNL grid coordinates
+CONUS_ZARR = BASE_DIR / "data" / "weather_data" / "conus404_skagit_precip_daily_full.zarr"
+UCLA_PREC_DIR = os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec")  # prec.daily.era5.d02.<year>.nc
+UCLA_STATIC = os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc")  # UCLA grid coordinates
+GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")  # <year>_daily_4km_gridMET_data.zarr
+GRIDMET_SAMPLE = os.path.join(GRIDMET_DIR, "2021_daily_4km_gridMET_data.zarr")  # used only for its grid
 
-# 11/16/21
-# 12/2/95
-# 1/18/11
-# 11/14/15
-# 11/19/21
-# 3/13/07
-# 12/3/21
-# 11/26/95
-# 11/28/11
-# 12/14/10
-# 11/27/09
-# 12/12/04
-# 12/4/95
+# Products, in plotting order, with their line colors and markers
+PRODUCTS = ['prism', 'pnnl', 'daymet', 'conus', 'ucla', 'gridmet']
+PRODUCT_COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+PRODUCT_MARKERS = ['o', 's', '^', 'D', 'v', 'p']
+PNNL_LAST_YEAR = 2020  # PNNL historical run ends in 2020
 
-# # 3-day window
-# SPECIFIC_DATES = [
-#     '2021-11-19',
-#     '1995-12-04',
-#     '1990-11-17',
-#     '1985-06-08',
-#     '2012-06-24',
-#     '2012-07-04'
-# ]
+# Event window: T-3 to T+5 days
+WINDOW_DAYS_BEFORE = 3
+WINDOW_DAYS_AFTER = 5
 
-# 11/19/21
-# 12/4/95
-# 11/17/90
-# 6/8/85
-# 6/24/12
-# 7/4/12
+CFS_TO_CMS = 0.0283168
 
-# # 5-day window
-# SPECIFIC_DATES = [
-#     '1985-06-08',
-#     '2020-06-01',
-#     '2022-07-05',
-#     '1997-06-24',
-#     # '1997-06-06',
-#     '1982-07-04',
-#     '2002-06-19',
-# ]
+# Figure settings
+FIGSIZE = (14, 12)
+DPI = 300
 
-# 5-day window, taking the min
+# Publication font sizes (figure is 14 in wide; expect ~0.5x reduction to journal page width)
+FONT_SUPTITLE = 22
+FONT_TITLE = 16
+FONT_LABEL = 16
+FONT_TICK = 14
+FONT_LEGEND = 13
+
+# Non-AR event dates to plot (top-discharge non-AR events, 5-day window, taking the min)
 SPECIFIC_DATES = [
     '1996-04-25',
     '2004-08-26',
@@ -91,15 +88,6 @@ SPECIFIC_DATES = [
     '2014-02-17',
     '1982-02-01'
 ]
-
-
-# 6/8/85
-# 6/1/20
-# 7/5/22
-# 6/24/97
-# 6/6/97
-# 7/4/82
-# 6/19/02
 
 
 def load_usgs_rdb(filepath, param_name):
@@ -196,7 +184,7 @@ def load_prism_from_new_format(date, prism_root):
                             filepath = os.path.join(root, f)
                             da = rioxarray.open_rasterio(filepath)
                             return da.squeeze().copy(deep=True)
-    except Exception as e:
+    except Exception:
         pass
 
     return None
@@ -204,7 +192,7 @@ def load_prism_from_new_format(date, prism_root):
 
 def load_daymet_from_netcdf(year):
     """Load Daymet data from netCDF file for a specific year"""
-    daymet_nc_path = os.path.join(VAULT_DIR, "daymet_new_hq", f"prcp_{year}_subset.nc")
+    daymet_nc_path = os.path.join(DAYMET_DIR, f"prcp_{year}_subset.nc")
 
     if not os.path.exists(daymet_nc_path):
         return None
@@ -217,25 +205,14 @@ def load_daymet_from_netcdf(year):
         return None
 
 
-def get_ornl_zarr(year):
-    if 1981 <= year <= 2011:
-        p = os.path.join(VAULT_DIR, "climate_sets/1981_2011_ORNL_data.zarr")
-        if os.path.exists(p):
-            return p
-    p1 = os.path.join(VAULT_DIR, f"ornl/{year}_{year}_ref_DaymetV4_ORNL_data.zarr")
-    if os.path.exists(p1):
-        return p1
-    p2 = os.path.join(VAULT_DIR, f"DaymetV4/{year}_{year}_ORNL_data.zarr")
-    if os.path.exists(p2):
-        return p2
-    return None
+def extract_event_window(event_date, products_to_extract=PRODUCTS):
+    """Extract daily basin-mean precipitation for a 9-day window (T-3 to T+5) around an event.
 
-
-def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daymet', 'conus', 'ucla', 'gridmet']):
-    """Extract 8-day precipitation window (T-2 to T+5) for an event"""
+    Returns a DataFrame indexed by date string with one column per product.
+    """
 
     window_dates = []
-    for i in range(-3, 6):
+    for i in range(-WINDOW_DAYS_BEFORE, WINDOW_DAYS_AFTER + 1):
         window_dates.append(event_date + pd.Timedelta(days=i))
 
     year = event_date.year
@@ -244,48 +221,40 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
     gdf = load_regions()
     masks_2d = {}
 
+    # Basin masks on each product's grid. PRISM and Daymet masks are built
+    # later from the coordinates of the data actually loaded.
     try:
-        sample_prism = xr.open_zarr(os.path.join(VAULT_DIR, "PRISM/1991-2000/1996-01-01_1996-12-31_daily_4km_PRISM_data.zarr"), consolidated=False)
-        masks_2d['PRISM'] = get_mask(gdf, sample_prism.lon, sample_prism.lat).any(dim='region')
-        sample_prism.close()
-    except:
-        pass
-
-    try:
-        sample_geo = xr.open_dataset(os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc"))
+        sample_geo = xr.open_dataset(PNNL_GEO)
         masks_2d['PNNL'] = get_mask(gdf, sample_geo.XLONG_M.values[0], sample_geo.XLAT_M.values[0]).any(dim='region')
-    except:
+    except Exception:
         pass
 
-    # Daymet mask will be created dynamically in extraction (from actual data coordinates)
-
     try:
-        sample_conus = xr.open_zarr(os.path.join(BASE_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr"))
+        sample_conus = xr.open_zarr(CONUS_ZARR)
         masks_2d['CONUS404'] = get_mask(gdf, sample_conus.lon, sample_conus.lat).any(dim='region')
         sample_conus.close()
-    except:
+    except Exception:
         pass
 
     try:
-        ucla_static = xr.open_dataset(os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc"))
+        ucla_static = xr.open_dataset(UCLA_STATIC)
         masks_2d['UCLA'] = get_mask(gdf, ucla_static.lon2d.values, ucla_static.lat2d.values).any(dim='region')
-    except:
+    except Exception:
         pass
 
     try:
-        sample_gridmet = xr.open_zarr(os.path.join(VAULT_DIR, "gridmet/2021_daily_4km_gridMET_data.zarr"))
+        sample_gridmet = xr.open_zarr(GRIDMET_SAMPLE)
         masks_2d['GridMET'] = get_mask(gdf, sample_gridmet.lon, sample_gridmet.lat).any(dim='region')
-    except:
+    except Exception:
         pass
 
     # Extract PRISM from new format (TIFF)
     if 'prism' in products_to_extract:
-        prism_root = os.path.join(VAULT_DIR, "prism_new_hq")
         prism_data = {}
 
         for date in window_dates:
             try:
-                da = load_prism_from_new_format(date, prism_root)
+                da = load_prism_from_new_format(date, PRISM_DIR)
                 if da is None:
                     continue
                 lon = da.x.values
@@ -293,7 +262,7 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
                 m_prism = get_mask(gdf, lon, lat).any(dim='region')
                 mean_val = calculate_basin_mean(da, m_prism)
                 prism_data[date.normalize()] = mean_val
-            except Exception as date_error:
+            except Exception:
                 pass
 
         # Add extracted values to results
@@ -307,12 +276,12 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
         if prism_count > 0:
             print(f"  ✓ PRISM: {prism_count}/{len(window_dates)} dates extracted")
 
-    # Extract PNNL
-    if 'pnnl' in products_to_extract and year <= 2020:
+    # Extract PNNL (hourly, summed to daily; window may span two years)
+    if 'pnnl' in products_to_extract and year <= PNNL_LAST_YEAR:
         try:
             pnnl_paths = [
-                os.path.join(VAULT_DIR, "PNNL/historical", str(year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc"),
-                os.path.join(VAULT_DIR, "PNNL/historical", str(year+1), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year+1}.nc")
+                os.path.join(PNNL_DIR, str(year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc"),
+                os.path.join(PNNL_DIR, str(year+1), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year+1}.nc")
             ]
             series_list = []
             for pnnl_path in pnnl_paths:
@@ -330,7 +299,7 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
                             pnnl_daily.index = pnnl_daily.index.normalize()
                             series_list.append(pnnl_daily)
                         ds.close()
-                    except:
+                    except Exception:
                         pass
             if series_list:
                 pnnl_daily = pd.concat(series_list).sort_index()
@@ -378,9 +347,8 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
     # Extract CONUS404
     if 'conus' in products_to_extract:
         try:
-            conus_path = os.path.join(BASE_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr")
-            if os.path.exists(conus_path):
-                ds = xr.open_zarr(conus_path)
+            if os.path.exists(CONUS_ZARR):
+                ds = xr.open_zarr(CONUS_ZARR)
                 ds['time'] = pd.to_datetime(ds.time.values).normalize()
                 da = ds['precip_daily'].sel(time=window_dates, method='nearest')
                 if 'CONUS404' in masks_2d:
@@ -400,8 +368,8 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
     if 'ucla' in products_to_extract:
         try:
             u_paths = [
-                os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec", f"prec.daily.era5.d02.{year-1}.nc"),
-                os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec", f"prec.daily.era5.d02.{year}.nc")
+                os.path.join(UCLA_PREC_DIR, f"prec.daily.era5.d02.{year-1}.nc"),
+                os.path.join(UCLA_PREC_DIR, f"prec.daily.era5.d02.{year}.nc")
             ]
             series_list = []
             for p in u_paths:
@@ -419,7 +387,7 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
                             s.index = s.index.normalize()
                             series_list.append(s)
                         ds.close()
-                    except:
+                    except Exception:
                         pass
             if series_list:
                 ucla_daily = pd.concat(series_list).sort_index()
@@ -437,7 +405,7 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
         try:
             series_list = []
             for y in [year, year+1]:
-                gridmet_path = os.path.join(VAULT_DIR, f"gridmet/{y}_daily_4km_gridMET_data.zarr")
+                gridmet_path = os.path.join(GRIDMET_DIR, f"{y}_daily_4km_gridMET_data.zarr")
                 if os.path.exists(gridmet_path):
                     try:
                         ds = xr.open_zarr(gridmet_path)
@@ -451,7 +419,7 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
                             gridmet_daily.index = gridmet_daily.index.normalize()
                             series_list.append(gridmet_daily)
                         ds.close()
-                    except:
+                    except Exception:
                         pass
             if series_list:
                 gridmet_daily = pd.concat(series_list).sort_index()
@@ -467,8 +435,8 @@ def extract_event_window(event_date, products_to_extract=['prism', 'pnnl', 'daym
     return pd.DataFrame(results).T
 
 
-def plot_specific_ar_events():
-    """Extract and plot specific AR events"""
+def plot_specific_non_ar_events():
+    """Extract and plot specific non-AR events"""
     print("Loading events data...")
     events_df = pd.read_csv(EVENTS_CSV)
     events_df['date'] = pd.to_datetime(events_df['date'])
@@ -479,10 +447,10 @@ def plot_specific_ar_events():
     # Convert specific dates to datetime
     event_dates = [pd.to_datetime(d) for d in SPECIFIC_DATES]
 
-    print(f"Extracting and plotting {len(event_dates)} specific AR events...")
+    print(f"Extracting and plotting {len(event_dates)} specific non-AR events...")
 
     # Extract data for all events and calculate max cumulative precipitation
-    products = ['prism', 'pnnl', 'daymet', 'conus', 'ucla', 'gridmet']
+    products = PRODUCTS
     max_cumsum = 0
     all_event_data = {}
 
@@ -499,11 +467,8 @@ def plot_specific_ar_events():
     ylim_max = max_cumsum * 1.05
 
     # Create plots
-    fig, axes = plt.subplots(3, 2, figsize=(14, 11))
+    fig, axes = plt.subplots(3, 2, figsize=FIGSIZE)
     axes = axes.flatten()
-
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
-    markers = ['o', 's', '^', 'D', 'v', 'p']
 
     for idx, event_date in enumerate(event_dates):
         ax = axes[idx]
@@ -522,33 +487,36 @@ def plot_specific_ar_events():
         event_end = event_data.index.max()
         discharge_window = q_df[(q_df['date'] >= event_start) & (q_df['date'] <= event_end)]
         max_discharge_cfs = discharge_window['discharge_cfs'].max() if len(discharge_window) > 0 else None
-        discharge_cms = max_discharge_cfs * 0.0283168 if max_discharge_cfs is not None and max_discharge_cfs > 0 else None
+        discharge_cms = max_discharge_cfs * CFS_TO_CMS if max_discharge_cfs is not None and max_discharge_cfs > 0 else None
 
         # Plot each product
         for prod_idx, product in enumerate(products):
             if product in event_data.columns:
                 cumsum = event_data[product].cumsum()
                 ax.plot(cumsum.index, cumsum, label=product.upper(),
-                       marker=markers[prod_idx], linewidth=2, markersize=5,
-                       color=colors[prod_idx], alpha=0.8)
+                       marker=PRODUCT_MARKERS[prod_idx], linewidth=2, markersize=5,
+                       color=PRODUCT_COLORS[prod_idx], alpha=0.8)
 
         ar_label = f'(AR = {ar_scale} | Discharge = {discharge_cms:.0f} cms)' if ar_scale is not None else ''
-        ax.set_title(f'Event: {event_date.strftime("%Y-%m-%d")} {ar_label}', fontsize=12, fontweight='bold')
-        ax.set_xlabel('Date', fontsize=10)
-        ax.set_ylabel('Cumulative Precipitation (mm)', fontsize=10)
+        ax.set_title(f'{event_date.strftime("%Y-%m-%d")} {ar_label}', fontsize=FONT_TITLE, fontweight='bold')
+        if idx >= len(axes) - 2:
+            ax.set_xlabel('Date', fontsize=FONT_LABEL)
+        if idx % 2 == 0:
+            ax.set_ylabel('Cumulative\nPrecipitation (mm)', fontsize=FONT_LABEL)
         ax.set_ylim(0, ylim_max)
-        ax.legend(loc='best', fontsize=9, ncol=2)
+        ax.legend(loc='upper left', fontsize=FONT_LEGEND, ncol=2)
         ax.grid(True, alpha=0.3)
+        ax.tick_params(axis='both', labelsize=FONT_TICK)
         ax.tick_params(axis='x', rotation=45)
 
-    plt.suptitle('Cumulative Precipitation during Top Discharge non-AR Events', fontsize=16, fontweight='bold')
-    plt.tight_layout()
+    plt.suptitle('Cumulative Precipitation during Top Discharge non-AR Events', fontsize=FONT_SUPTITLE, fontweight='bold')
+    plt.tight_layout(h_pad=2.0)
 
     output_path = os.path.join(OUTPUT_DIR, 'specific_non_ar_events_cumulative_precipitation.png')
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(output_path, dpi=DPI, bbox_inches='tight')
     print(f"Plot saved to: {output_path}")
     plt.show()
 
 
 if __name__ == "__main__":
-    plot_specific_ar_events()
+    plot_specific_non_ar_events()

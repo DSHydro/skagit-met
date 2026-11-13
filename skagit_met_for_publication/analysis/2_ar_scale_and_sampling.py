@@ -1,34 +1,47 @@
-"""Aggregate AR scales across monitoring stations and apply balanced sampling strategy.
+"""Combine AR scales across grid points and select AR and isolated non-AR days.
 
-Loads the integrated daily dataset, computes maximum AR scale across three stations,
-then creates a balanced analysis subset: all AR events (scale 1-5) plus a random sample
-of 2000 non-AR days (scale 0) for bias analysis between precipitation products.
+Steps:
+
+1. Combined AR scale: for each day, ``ar_scale`` is the minimum of the AR
+   scales at the three grid points (47.5N, 48.0N and 48.5N at 124.5W).
+   A day is therefore an AR day (``ar_scale`` >= 1) only if all three grid
+   points have an AR; if at least one grid point has scale 0, the day is a
+   non-AR day (``ar_scale`` = 0).
+2. Isolated non-AR days: non-AR days within ±WINDOW_DAYS days (inclusive)
+   of any AR day are removed. All AR days are kept.
+3. Period: only days from START_YEAR to END_YEAR are kept. This is applied
+   after step 2, so AR days in 1980 still exclude nearby days in early 1981.
+
+Input (in ``<BASE_DIR>/analysis/outputs``):
+    1_skagit_daily_integrated_dataset_1980_2025.csv   (from script 1)
+
+Output (in ``<BASE_DIR>/analysis/outputs``):
+    2_ar_scale_and_sampling.csv
+        Same columns as the input plus ``ar_scale`` (combined AR scale).
+
+Usage:
+    python 2_ar_scale_and_sampling.py
 """
 
 import os
-import pandas as pd
-import xarray as xr
+
 import numpy as np
-import fsspec
-from datetime import datetime
+import pandas as pd
 
 # --- Paths ---
-BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication"
+# Project root = parent of the folder containing this script (i.e. skagit_met_for_publication/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AR_DATASET_PATH = os.path.join(BASE_DIR, "analysis/outputs/1_skagit_daily_integrated_dataset_1980_2025.csv")
-VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-# PNNL_PARQUET_PATH = os.path.join(VAULT_DIR, "PNNL/historical/PNNL_historical.parquet")
-# PRISM_VAULT_DIR = os.path.join(VAULT_DIR, "PRISM")
 OUTPUT_CSV = os.path.join(BASE_DIR, "analysis/outputs/2_ar_scale_and_sampling.csv")
 
-# def get_decade_folder(year: int) -> str:
-#     start_decade = (year // 10) * 10
-#     if start_decade == 1980 and year > 1980: return "1981-1990"
-#     if year % 10 == 0 and year > 1980: return f"{start_decade-9}-{start_decade}"
-#     if start_decade % 10 == 0: return f"{start_decade+1}-{start_decade+10}"
-#     return f"{start_decade}-{(year//10)*10+9}"
+# --- Settings ---
+WINDOW_DAYS = 5      # non-AR days within ±WINDOW_DAYS of an AR day are removed
+START_YEAR = 1981    # first year kept in the output
+END_YEAR = 2025      # last year kept in the output
 
-def run_bulk_analysis():
-    print("Initializing Bulk Bias Analysis...")
+def main():
+    """Build the AR / isolated non-AR daily subset and save it to OUTPUT_CSV."""
+    print("Selecting AR and isolated non-AR days...")
 
     # 1. Load AR Master Catalogue
     ar_df = pd.read_csv(AR_DATASET_PATH)
@@ -41,10 +54,11 @@ def run_bulk_analysis():
     elif 'ar_scale' not in ar_df.columns:
         ar_df['ar_scale'] = 0.0
 
-    # 1.25 Remove non-AR dates within ±5 days of any AR event
+    # 1.25 Remove non-AR dates within ±WINDOW_DAYS of any AR event
     ar_dates = ar_df[ar_df['ar_scale'] > 0]['date'].values
 
-    def is_within_ar_window(date, ar_dates, window_days=5):
+    def is_within_ar_window(date, ar_dates, window_days=WINDOW_DAYS):
+        """Return True if `date` is within ±window_days (inclusive) of any date in `ar_dates`."""
         if len(ar_dates) == 0:
             return False
         date_np = np.datetime64(date)
@@ -58,97 +72,19 @@ def run_bulk_analysis():
     ar_df = ar_df[~(non_ar_mask & non_ar_in_window)]
 
     removed_count = non_ar_in_window.sum()
-    print(f"Removed {removed_count} non-AR dates within ±5 days of AR events")
+    print(f"Removed {removed_count} non-AR dates within ±{WINDOW_DAYS} days of AR events")
 
     # Combine all remaining events (AR and isolated non-AR)
     analysis_subset = ar_df.sort_values('date').reset_index(drop=True)
-    analysis_subset = analysis_subset[(analysis_subset['date'].dt.year >= 1981) & (analysis_subset['date'].dt.year <= 2025)]
+    analysis_subset = analysis_subset[(analysis_subset['date'].dt.year >= START_YEAR) & (analysis_subset['date'].dt.year <= END_YEAR)]
     ar_count = len(analysis_subset[analysis_subset['ar_scale'] > 0])
     non_ar_count = len(analysis_subset[analysis_subset['ar_scale'] == 0])
     print(f"Total analysis targets: {len(analysis_subset)} (AR: {ar_count}, Non-AR Scale 0: {non_ar_count})")
 
-    # # Initialize columns
-    # for col in ['prism_3d_tot', 'prism_3d_max', 'pnnl_3d_tot', 'pnnl_3d_max']:
-    #     analysis_subset[col] = np.nan
-
-    # # 3. Load PNNL Mapper
-    # try:
-    #     mapper = fsspec.get_mapper("reference://", fo=PNNL_PARQUET_PATH, target_protocol="file")
-    #     ds_pnnl_all = xr.open_zarr(mapper, consolidated=False)
-    # except Exception as e:
-    #     print(f"Error loading PNNL vault: {e}")
-    #     ds_pnnl_all = None
-
-    # results = []
-
-    # # 4. Iterate by Year to keep RAM clean
-    # target_years = sorted(analysis_subset['date'].dt.year.unique())
-    
-    # for year in target_years:
-    #     print(f"  Processing Year {year}...")
-    #     year_subset = analysis_subset[analysis_subset['date'].dt.year == year].copy()
-        
-    #     # --- PRISM Part ---
-    #     prism_tot, prism_max = pd.Series(dtype='float64'), pd.Series(dtype='float64')
-    #     decade_folder = get_decade_folder(year)
-    #     zarr_name = f"{year}-01-01_{year}-12-31_daily_4km_PRISM_data.zarr"
-    #     zarr_path = os.path.join(PRISM_VAULT_DIR, decade_folder, zarr_name)
-        
-    #     if os.path.exists(zarr_path):
-    #         try:
-    #             ds_p = xr.open_zarr(zarr_path, consolidated=False)
-    #             # Basin mean daily precipitation
-    #             spatial_dims = [d for d in ds_p.dims if d not in ['time', 'date']]
-    #             p_daily = ds_p['ppt'].mean(dim=spatial_dims, skipna=True).to_series()
-    #             # 3-day rolling totals/max for each date in subset
-    #             # Note: for daily continuous we can just take the 3-day sum around the target
-    #             # But to stay consistent with previous event analysis, we'll re-extract windows
-    #             for dt in year_subset['date']:
-    #                 window = p_daily.loc[dt - pd.Timedelta(days=1) : dt + pd.Timedelta(days=1)]
-    #                 if len(window) == 3:
-    #                     year_subset.loc[year_subset['date'] == dt, 'prism_3d_tot'] = window.sum()
-    #                     year_subset.loc[year_subset['date'] == dt, 'prism_3d_max'] = window.max()
-    #             ds_p.close()
-    #         except Exception as e: print(f"    PRISM Error for {year}: {e}")
-
-    #     # --- PNNL Part ---
-    #     if ds_pnnl_all is not None and year <= 2020:
-    #         try:
-    #             # Optimized: find indices once per year instead of slow boolean scans on 11TB index
-    #             time_arr = pd.to_datetime(ds_pnnl_all.time.values)
-    #             indices = np.where(time_arr.year == year)[0]
-                
-    #             if len(indices) > 0:
-    #                 pnnl_year = ds_pnnl_all.isel(time=indices)
-    #                 # Pre-calculate daily averages for the basin
-    #                 spatial_dims = [d for d in pnnl_year.dims if d not in ['time', 'date']]
-    #                 pnnl_basin = pnnl_year['PREC_ACC_NC'].mean(dim=spatial_dims).resample(time='1D').sum().to_series()
-    #                 # Normalize index to avoid misaligned slicing (e.g. 00:00:00 vs No Time)
-    #                 pnnl_basin.index = pnnl_basin.index.normalize()
-                    
-    #                 for dt in year_subset['date']:
-    #                     norm_dt = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-    #                     window = pnnl_basin.loc[norm_dt - pd.Timedelta(days=1) : norm_dt + pd.Timedelta(days=1)]
-    #                     if len(window) == 3:
-    #                         year_subset.loc[year_subset['date'] == dt, 'pnnl_3d_tot'] = window.sum()
-    #                         year_subset.loc[year_subset['date'] == dt, 'pnnl_3d_max'] = window.max()
-    #                     else:
-    #                         print(f"    Missing PNNL window for {norm_dt} (found {len(window)} days)")
-    #             else:
-    #                 print(f"    No PNNL records found for year {year}")
-    #         except Exception as e: print(f"    PNNL Error for {year}: {e}")
-            
-    #     # Calculate Bias for the year subset
-    #     year_subset['bias_tot'] = year_subset['pnnl_3d_tot'] - year_subset['prism_3d_tot']
-    #     year_subset['bias_max'] = year_subset['pnnl_3d_max'] - year_subset['prism_3d_max']
-        
-    #     results.append(year_subset)
-    #     # Checkpoint save - every year for reliable monitoring
-
-    # Save sampled analysis subset
+    # Save analysis subset
     analysis_subset.to_csv(OUTPUT_CSV, index=False)
 
-    print(f"✓ Bulk dataset successfully generated: {OUTPUT_CSV}")
+    print(f"Dataset saved: {OUTPUT_CSV}")
 
 if __name__ == "__main__":
-    run_bulk_analysis()
+    main()

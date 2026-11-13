@@ -34,6 +34,12 @@ VAULT_DIR = "/data0/skagit_met/data_transfer/data"
 HUC8_GEO = Path(BASE_DIR) / "data/GIS/SkagitSubBasin_HUC8.geojson"
 PRISM_ROOT = Path(VAULT_DIR) / "prism_new_hq"
 
+# Publication font sizes (figures are 16 in wide; expect ~0.45x reduction to journal page width)
+FONT_TITLE = 20
+FONT_LABEL = 20
+FONT_TICK = 17
+FONT_LEGEND = 17
+
 # Helper functions
 def load_usgs_rdb(filepath, param_name):
     """Load USGS RDB files."""
@@ -225,8 +231,8 @@ print("=" * 70)
 # # Date ranges for AR events (date_start_ucla, date_start_conus_pnnl, date_end, event_date, ar_category)
 date_ranges = [
     (datetime(1990, 11, 20, 23, 0, 0), datetime(1990, 11, 21, 0, 0, 0), datetime(1990, 11, 29, 23, 0, 0), "1990-11-24", "5.0"),
-    (datetime(1995, 11, 25, 23, 0, 0), datetime(1995, 11, 26, 0, 0, 0), datetime(1995, 12, 4, 23, 0, 0), "1995-11-29", "4.0"),
-    (datetime(1990, 11, 6, 23, 0, 0), datetime(1990, 11, 7, 0, 0, 0), datetime(1990, 11, 15, 23, 0, 0), "1990-11-10", "4.0"),
+    (datetime(1995, 11, 26, 23, 0, 0), datetime(1995, 11, 27, 0, 0, 0), datetime(1995, 12, 5, 23, 0, 0), "1995-11-30", "4.0"),
+    (datetime(1990, 11, 9, 23, 0, 0), datetime(1990, 11, 10, 0, 0, 0), datetime(1990, 11, 18, 23, 0, 0), "1990-11-13", "4.0"),
     (datetime(2006, 11, 3, 23, 0, 0), datetime(2006, 11, 4, 0, 0, 0), datetime(2006, 11, 12, 23, 0, 0), "2006-11-07", "5.0"),
     (datetime(2003, 10, 13, 23, 0, 0), datetime(2003, 10, 14, 0, 0, 0), datetime(2003, 10, 28, 23, 0, 0), "2003-10-21", "5.0"),
     (datetime(2021, 11, 12, 23, 0, 0), datetime(2021, 11, 13, 0, 0, 0), datetime(2021, 11, 20, 23, 0, 0), "2021-11-15", "4.0"),
@@ -457,20 +463,21 @@ for idx, (date_start_ucla, date_start, date_end, event_date, ar_category) in enu
     if not df_discharge_period.empty:
         ax2.plot(df_discharge_period['date'], df_discharge_period['discharge_cms'],
                 linewidth=2.5, color='#777777', label='USGS Discharge (cms)', alpha=0.7)
-        ax2.set_ylabel('Discharge (cms)', fontsize=13, fontweight='bold', color='#777777')
-        ax2.tick_params(axis='y', labelcolor='#777777')
+        ax2.set_ylabel('Discharge (cms)', fontsize=FONT_LABEL, fontweight='bold', color='#777777')
+        ax2.tick_params(axis='y', labelcolor='#777777', labelsize=FONT_TICK)
 
     # Formatting
-    ax.set_xlabel('Time', fontsize=13, fontweight='bold')
-    ax.set_ylabel('Hourly Precipitation (mm/hour)', fontsize=13, fontweight='bold')
+    ax.set_xlabel('Time', fontsize=FONT_LABEL, fontweight='bold')
+    ax.set_ylabel('Hourly Precipitation (mm/hour)', fontsize=FONT_LABEL, fontweight='bold')
     ax.set_title(f'Spatial Mean Hourly Precipitation - Skagit Basin ({event_date}, AR={ar_category})\n{date_start.strftime("%Y-%m-%d")} to {date_end.strftime("%Y-%m-%d")}',
-                fontsize=14, fontweight='bold')
+                fontsize=FONT_TITLE, fontweight='bold')
+    ax.tick_params(axis='both', labelsize=FONT_TICK)
     ax.grid(True, alpha=0.3, linestyle='--')
 
     # Combine legends
     lines1, labels1 = ax.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax.legend(lines1 + lines2, labels1 + labels2, fontsize=12, loc='upper right', framealpha=0.95)
+    ax.legend(lines1 + lines2, labels1 + labels2, fontsize=FONT_LEGEND, loc='upper right', framealpha=0.95)
 
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
@@ -512,20 +519,21 @@ for idx, (date_start_ucla, date_start, date_end, event_date, ar_category) in enu
     if not df_discharge_period.empty:
         ax2_2.plot(df_discharge_period['date'], df_discharge_period['discharge_cms'],
                   linewidth=2.5, color='#777777', label='USGS Discharge (cms)', alpha=0.7)
-        ax2_2.set_ylabel('Discharge (cms)', fontsize=13, fontweight='bold', color='#777777')
-        ax2_2.tick_params(axis='y', labelcolor='#777777')
+        ax2_2.set_ylabel('Discharge (cms)', fontsize=FONT_LABEL, fontweight='bold', color='#777777')
+        ax2_2.tick_params(axis='y', labelcolor='#777777', labelsize=FONT_TICK)
 
     # Formatting
-    ax2.set_xlabel('Time', fontsize=13, fontweight='bold')
-    ax2.set_ylabel('3-Hour Cumulative Precipitation (mm)', fontsize=13, fontweight='bold')
+    ax2.set_xlabel('Time', fontsize=FONT_LABEL, fontweight='bold')
+    ax2.set_ylabel('3-Hour Cumulative\nPrecipitation (mm)', fontsize=FONT_LABEL, fontweight='bold')
     ax2.set_title(f'3-Hour Cumulative Precipitation - Skagit Basin ({event_date}, AR={ar_category})\n{date_start.strftime("%Y-%m-%d")} to {date_end.strftime("%Y-%m-%d")}',
-                 fontsize=14, fontweight='bold')
+                 fontsize=FONT_TITLE, fontweight='bold')
+    ax2.tick_params(axis='both', labelsize=FONT_TICK)
     ax2.grid(True, alpha=0.3, linestyle='--')
 
     # Combine legends
     lines1, labels1 = ax2.get_legend_handles_labels()
     lines2, labels2 = ax2_2.get_legend_handles_labels()
-    ax2.legend(lines1 + lines2, labels1 + labels2, fontsize=12, loc='upper right', framealpha=0.95)
+    ax2.legend(lines1 + lines2, labels1 + labels2, fontsize=FONT_LEGEND, loc='upper right', framealpha=0.95)
 
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()

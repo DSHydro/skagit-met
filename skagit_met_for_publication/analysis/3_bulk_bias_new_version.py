@@ -1,53 +1,120 @@
-"""Multi-product bulk precipitation bias analysis for Skagit Basin.
+"""Extract basin-mean precipitation from multiple products for each AR / non-AR day.
 
-Loads precipitation data from multiple weather datasets (PRISM, PNNL, Daymet,
-CONUS404, UCLA, GridMET, HRRR, and ORNL) over the Skagit Basin region.
-For each precipitation event date, computes 7-day window totals and maximums
-(spanning days T-6, T-5, T-4, T-3, T-2, T-1, T) across all products. Merges results back into
-the bulk bias CSV for downstream bias analysis.
+For every date T in the output of script 2 (AR days and isolated non-AR days),
+basin-mean daily precipitation is computed for each product and summarised
+over windows ending on T:
 
-Datasets are loaded from:
-- /data0/skagit_met/data_transfer/data (VAULT_DIR)
-- /data0/hernanqd/plots_code/skagit_basin_de (PROJECT_DIR)
+* 3-day window (T-2 to T): total and daily maximum - PRISM only
+  (``prism_3d_tot``, ``prism_3d_max``).
+* 7-day window (T-6 to T): total and daily maximum - all products
+  (``<product>_7d_tot``, ``<product>_7d_max``).
 
-Output is saved to outputs/3_multi_product_bulk_bias_data.csv with columns for
-each dataset's 7-day totals and maximums.
+A window metric is NaN unless all days of the window are available.
+
+Products (column prefix):
+    prism        PRISM daily 4 km (zipped GeoTIFF, one file per day)
+    pnnl         PNNL WRF historical run, hourly summed to daily (up to PNNL_LAST_YEAR)
+    daymet       Daymet daily
+    conus        CONUS404 daily
+    ucla         UCLA WRF-ERA5 d02 daily
+    gridmet      gridMET daily
+    hrrr         HRRR forecast hour 1, hourly summed to daily (from HRRR_FIRST_YEAR)
+    ornl_mean    ORNL DBCCA-Daymet downscaled CMIP6 (ssp585), mean of the 6 GCMs
+    ornl_median  ORNL DBCCA-Daymet downscaled CMIP6 (ssp585), median of the 6 GCMs
+                 (both from ORNL_CSV, pre-computed basin means; its DaymetV4
+                 column is excluded)
+
+Basin mean: unweighted mean of grid cells inside the union of the HUC8
+sub-basins in REGION_NAMES (Upper Skagit, Sauk, Lower Skagit), using
+regionmask on each product's native grid.
+
+Deduplication: after extraction, runs of consecutive AR days with the same
+``ar_scale`` - and runs of consecutive non-AR days - are each reduced to the
+single day with the highest ``prism_7d_tot``.
+
+Inputs:
+    <BASE_DIR>/analysis/outputs/2_ar_scale_and_sampling.csv   (from script 2)
+    <BASE_DIR>/data/GIS/SkagitSubBasin_HUC8.geojson
+    External precipitation datasets - see "PATHS - external" below.
+
+Output:
+    <BASE_DIR>/analysis/outputs/3_multi_product_bulk_bias_data.csv
+        Columns of the input plus the 3-day and 7-day metrics listed above.
+
+Usage:
+    python 3_bulk_bias_new_version.py
 """
 
 import os
-import pandas as pd
-import xarray as xr
-import numpy as np
-import geopandas as gpd
-import regionmask
-import warnings
-from joblib import Parallel, delayed
 import tempfile
+import warnings
 import zipfile
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import regionmask
 import rioxarray
+import xarray as xr
+from joblib import Parallel, delayed
 
 warnings.filterwarnings('ignore')
 
-BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication"
-VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-PROJECT_DIR = "/data0/hernanqd/plots_code/skagit-met"
+# ============================================================
+# PATHS - project files (relative to this repository)
+# ============================================================
+# Project root = parent of the folder containing this script (i.e. skagit_met_for_publication/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HUC8_GEO = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
 BULK_CSV = os.path.join(BASE_DIR, "analysis/outputs/2_ar_scale_and_sampling.csv")
 OUTPUT_CSV = os.path.join(BASE_DIR, "analysis/outputs/3_multi_product_bulk_bias_data.csv")
 
+# ============================================================
+# PATHS - external precipitation datasets (edit to your local copies)
+# ============================================================
+VAULT_DIR = "/data0/skagit_met/data_transfer/data"
+PROJECT_DIR = "/data0/hernanqd/plots_code/skagit-met"
+
+PRISM_DIR = os.path.join(VAULT_DIR, "prism_new_hq")           # <decade>/prism_ppt_us_25m_YYYYMMDD.zip
+DAYMET_DIR = os.path.join(VAULT_DIR, "daymet_new_hq")         # prcp_YYYY_subset.nc
+PNNL_DIR = os.path.join(VAULT_DIR, "PNNL/historical")         # YYYY/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.YYYY.nc
+PNNL_GEO_FILE = os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc")
+UCLA_DIR = os.path.join(VAULT_DIR, "ucla_era5_d02_daily")     # prec/prec.daily.era5.d02.YYYY.nc
+UCLA_GEO_FILE = os.path.join(UCLA_DIR, "static/wrfinput_d02_coord.nc")
+GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")              # YYYY_daily_4km_gridMET_data.zarr
+GRIDMET_GRID_FILE = os.path.join(GRIDMET_DIR, "2021_daily_4km_gridMET_data.zarr")
+HRRR_DIR = os.path.join(VAULT_DIR, "weather_data")            # YYYY-MM_HRRR_data[_fixed_time].zarr
+HRRR_GRID_FILE = os.path.join(HRRR_DIR, "2014-12_HRRR_data.zarr")
+CONUS404_ZARR = os.path.join(PROJECT_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr")
+ORNL_CSV = "/data0/hernanqd/plots_code/exploring/daymet_skagit_precip_daily_basin_backfill.csv"
+
+# ============================================================
+# SETTINGS
+# ============================================================
+REGION_NAMES = ["Upper Skagit", "Sauk", "Lower Skagit"]  # HUC8 sub-basins forming the basin mask
+PNNL_LAST_YEAR = 2020    # PNNL historical run ends in 2020
+HRRR_FIRST_YEAR = 2014   # HRRR data start in 2014
+N_JOBS = 12              # parallel workers (one year per worker)
+
 def load_regions():
+    """Load the Skagit HUC8 sub-basin polygons in geographic coordinates (EPSG:4326)."""
     gdf = gpd.read_file(HUC8_GEO).to_crs("EPSG:4326")
     return gdf
 
 def get_mask(gdf, lon, lat):
+    """Return a 3D (region, y, x) boolean mask of the REGION_NAMES sub-basins on the given grid.
+
+    Callers combine the regions with ``.any(dim='region')`` to get a 2D basin mask.
+    """
     mask = regionmask.mask_3D_geopandas(gdf, lon, lat)
     region_indices = []
-    for r in ["Upper Skagit", "Sauk", "Lower Skagit"]:
+    for r in REGION_NAMES:
         idx = gdf[gdf["Name"].str.contains(r, case=False)].index[0]
         region_indices.append(idx)
     return mask.sel(region=region_indices)
 
 def get_decade_folder(year: int) -> str:
+    """Return the PRISM sub-folder name that holds a given year (e.g. 1981-1990, 2021-2024)."""
     if 2021 <= year <= 2024:
         return "2021-2024"
     start_decade = (year // 10) * 10
@@ -60,7 +127,10 @@ def get_decade_folder(year: int) -> str:
     return f"{start_decade}-{(year//10)*10+9}"
 
 def load_prism_from_new_format(date, prism_root):
-    """Load PRISM data from new format (TIFF) zip file for a specific date"""
+    """Load one day of PRISM precipitation from its zipped GeoTIFF.
+
+    Returns a 2D DataArray (y, x), or None if the file is missing or unreadable.
+    """
     date_str = date.strftime('%Y%m%d')
     year = date.year
     decade_folder = get_decade_folder(year)
@@ -73,7 +143,7 @@ def load_prism_from_new_format(date, prism_root):
         with tempfile.TemporaryDirectory() as tmpdir:
             with zipfile.ZipFile(zip_path, 'r') as z:
                 z.extractall(tmpdir)
-                for root, dirs, files in os.walk(tmpdir):
+                for root, _, files in os.walk(tmpdir):
                     for f in files:
                         if f.endswith('.tif'):
                             filepath = os.path.join(root, f)
@@ -85,8 +155,8 @@ def load_prism_from_new_format(date, prism_root):
     return None
 
 def load_daymet_from_netcdf(year):
-    """Load Daymet data from netCDF file for a specific year"""
-    daymet_nc_path = os.path.join(VAULT_DIR, "daymet_new_hq", f"prcp_{year}_subset.nc")
+    """Open the Daymet netCDF file for one year, or return None if missing or unreadable."""
+    daymet_nc_path = os.path.join(DAYMET_DIR, f"prcp_{year}_subset.nc")
 
     if not os.path.exists(daymet_nc_path):
         return None
@@ -99,6 +169,21 @@ def load_daymet_from_netcdf(year):
         return None
 
 def calculate_basin_mean(da, mask_2d):
+    """Unweighted mean of the grid cells inside the basin mask.
+
+    Parameters
+    ----------
+    da : xarray.DataArray
+        3D (time, y, x) or 2D (y, x) precipitation field.
+    mask_2d : xarray.DataArray or numpy.ndarray
+        2D basin mask on the same grid (cells > 0 are inside the basin).
+
+    Returns
+    -------
+    pandas.Series (3D input), indexed by time, or float (2D input).
+    For 2D input (PRISM), negative values (no-data) are set to NaN first.
+    NaNs are ignored in the mean.
+    """
     data = da.values
     mask = mask_2d.values if hasattr(mask_2d, 'values') else mask_2d
     if data.ndim == 3:
@@ -127,6 +212,24 @@ def calculate_basin_mean(da, mask_2d):
         raise ValueError(f"Unexpected data dimensions: {data.ndim}")
 
 def process_year(year, event_dates, masks_2d):
+    """Compute the 3-day and 7-day precipitation metrics for all event dates in one year.
+
+    Parameters
+    ----------
+    year : int
+        Calendar year being processed (one parallel job per year).
+    event_dates : array of datetime64
+        Dates T (AR or non-AR days) in this year.
+    masks_2d : dict
+        2D basin masks per product grid ('PNNL', 'CONUS404', 'UCLA', 'GridMET',
+        'HRRR'); the Daymet mask is added here from the Daymet file itself.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per event date with columns 'date', 'prism_3d_tot', 'prism_3d_max'
+        and '<product>_7d_tot', '<product>_7d_max' for every product.
+    """
     print(f"Processing Year {year} with {len(event_dates)} events...")
 
     # Construct the set of all window dates (T-6 through T for 7-day window)
@@ -145,12 +248,11 @@ def process_year(year, event_dates, masks_2d):
     hrrr_daily = None
     
     # 1. PRISM (new format - TIFF zip files)
-    prism_root = os.path.join(VAULT_DIR, "prism_new_hq")
     prism_data = {}
     gdf = load_regions()
 
     for date in window_dates:
-        da = load_prism_from_new_format(date, prism_root)
+        da = load_prism_from_new_format(date, PRISM_DIR)
         if da is None:
             continue
         lon = da.x.values
@@ -164,8 +266,8 @@ def process_year(year, event_dates, masks_2d):
         prism_daily.index = pd.to_datetime(prism_daily.index).normalize()
         
     # 2. PNNL
-    if year <= 2020:
-        pnnl_path = os.path.join(VAULT_DIR, "PNNL/historical", str(year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc")
+    if year <= PNNL_LAST_YEAR:
+        pnnl_path = os.path.join(PNNL_DIR, str(year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc")
         if os.path.exists(pnnl_path):
             try:
                 ds = xr.open_dataset(pnnl_path)
@@ -203,12 +305,11 @@ def process_year(year, event_dates, masks_2d):
         print(f"Error processing Daymet for year {year}: {e}")
 
     # 3.5 ORNL (Mean and Median Ensemble from backfill CSV)
-    ornl_path = "/data0/hernanqd/plots_code/exploring/daymet_skagit_precip_daily_basin_backfill.csv"
     ornl_mean_daily = None
     ornl_median_daily = None
-    if os.path.exists(ornl_path):
+    if os.path.exists(ORNL_CSV):
         try:
-            ornl_df = pd.read_csv(ornl_path, index_col=0, parse_dates=True)
+            ornl_df = pd.read_csv(ORNL_CSV, index_col=0, parse_dates=True)
             ornl_df.index = pd.to_datetime(ornl_df.index).normalize()
             ornl_mean_daily = ornl_df.iloc[:, 1:].mean(axis=1)  # mean across models
             ornl_median_daily = ornl_df.iloc[:, 1:].median(axis=1)  # median across models
@@ -220,10 +321,9 @@ def process_year(year, event_dates, masks_2d):
         except: pass
 
     # 4. CONUS404
-    conus_path = os.path.join(PROJECT_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr")
-    if os.path.exists(conus_path):
+    if os.path.exists(CONUS404_ZARR):
         try:
-            ds = xr.open_zarr(conus_path)
+            ds = xr.open_zarr(CONUS404_ZARR)
             ds['time'] = pd.to_datetime(ds.time.values).normalize()
             da = ds['precip_daily'].sel(time=window_dates, method='nearest')
             conus_daily = calculate_basin_mean(da, masks_2d['CONUS404'])
@@ -233,8 +333,8 @@ def process_year(year, event_dates, masks_2d):
         
     # 5. UCLA
     u_paths = [
-        os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec", f"prec.daily.era5.d02.{year-1}.nc"),
-        os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec", f"prec.daily.era5.d02.{year}.nc")
+        os.path.join(UCLA_DIR, "prec", f"prec.daily.era5.d02.{year-1}.nc"),
+        os.path.join(UCLA_DIR, "prec", f"prec.daily.era5.d02.{year}.nc")
     ]
     series_list = []
     for p in u_paths:
@@ -257,7 +357,7 @@ def process_year(year, event_dates, masks_2d):
         ucla_daily = ucla_daily[~ucla_daily.index.duplicated(keep='first')]
 
     # 6. GridMET
-    gridmet_path = os.path.join(VAULT_DIR, f"gridmet/{year}_daily_4km_gridMET_data.zarr")
+    gridmet_path = os.path.join(GRIDMET_DIR, f"{year}_daily_4km_gridMET_data.zarr")
     if os.path.exists(gridmet_path):
         try:
             ds = xr.open_zarr(gridmet_path)
@@ -271,14 +371,14 @@ def process_year(year, event_dates, masks_2d):
         except: pass
         
     # 7. HRRR
-    if year >= 2014:
+    if year >= HRRR_FIRST_YEAR:
         hrrr_paths = []
         for m in range(1, 13):
-            p = os.path.join(VAULT_DIR, "weather_data", f"{year}-{m:02d}_HRRR_data.zarr")
+            p = os.path.join(HRRR_DIR, f"{year}-{m:02d}_HRRR_data.zarr")
             if os.path.exists(p): hrrr_paths.append(p)
-            p_fixed = os.path.join(VAULT_DIR, "weather_data", f"{year}-{m:02d}_HRRR_data_fixed_time.zarr")
+            p_fixed = os.path.join(HRRR_DIR, f"{year}-{m:02d}_HRRR_data_fixed_time.zarr")
             if os.path.exists(p_fixed): hrrr_paths.append(p_fixed)
-        next_jan = os.path.join(VAULT_DIR, "weather_data", f"{year+1}-01_HRRR_data.zarr")
+        next_jan = os.path.join(HRRR_DIR, f"{year+1}-01_HRRR_data.zarr")
         if os.path.exists(next_jan): hrrr_paths.append(next_jan)
         
         series_list = []
@@ -357,10 +457,13 @@ def process_year(year, event_dates, masks_2d):
     return pd.DataFrame(results)
 
 def deduplicate_events_by_prism(df):
-    """
-    Group contiguous AR/non-AR events and keep the date with highest prism_7d_tot.
-    AR: groups contiguous dates with same ar_scale
-    Non-AR: groups contiguous non-AR dates
+    """Reduce runs of consecutive days to one representative day each.
+
+    - AR days (ar_scale > 0): consecutive dates with the same ar_scale form one group.
+    - Non-AR days (ar_scale == 0): consecutive dates form one group.
+
+    From each group, the day with the highest prism_7d_tot is kept. Groups in
+    which prism_7d_tot is NaN for every day are dropped.
     """
     df = df.sort_values('date').reset_index(drop=True)
 
@@ -377,7 +480,7 @@ def deduplicate_events_by_prism(df):
 
         # Keep row with max prism_7d_tot for each group (skip groups with all NaN)
         idx_list = []
-        for group_id, group_df in ar_events.groupby('group_id'):
+        for _, group_df in ar_events.groupby('group_id'):
             valid_idx = group_df['prism_7d_tot'].idxmax()
             if pd.notna(valid_idx):
                 idx_list.append(valid_idx)
@@ -396,7 +499,7 @@ def deduplicate_events_by_prism(df):
 
         # Keep row with max prism_7d_tot for each group (skip groups with all NaN)
         idx_list = []
-        for group_id, group_df in non_ar_events.groupby('group_id'):
+        for _, group_df in non_ar_events.groupby('group_id'):
             valid_idx = group_df['prism_7d_tot'].idxmax()
             if pd.notna(valid_idx):
                 idx_list.append(valid_idx)
@@ -409,6 +512,7 @@ def deduplicate_events_by_prism(df):
     return result
 
 def main():
+    """Build basin masks, extract metrics for all years in parallel, deduplicate and save."""
     print("Loading geometry and template CSV...")
     gdf = load_regions()
     df_bulk = pd.read_csv(BULK_CSV)
@@ -418,32 +522,31 @@ def main():
     masks_2d = {}
 
     # PNNL
-    sample_geo = xr.open_dataset(os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc"))
+    sample_geo = xr.open_dataset(PNNL_GEO_FILE)
     masks_2d['PNNL'] = get_mask(gdf, sample_geo.XLONG_M.values[0], sample_geo.XLAT_M.values[0]).any(dim='region')
 
-    # Daymet - will be created dynamically in process_year for netCDF format
-    # (2D coordinates require loading a sample file first)
-    
+    # (Daymet mask is created inside process_year from the first Daymet file read)
+
     # CONUS404
-    sample_conus = xr.open_zarr(os.path.join(PROJECT_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr"))
+    sample_conus = xr.open_zarr(CONUS404_ZARR)
     masks_2d['CONUS404'] = get_mask(gdf, sample_conus.lon, sample_conus.lat).any(dim='region')
     
     # UCLA
-    ucla_static = xr.open_dataset(os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc"))
+    ucla_static = xr.open_dataset(UCLA_GEO_FILE)
     masks_2d['UCLA'] = get_mask(gdf, ucla_static.lon2d.values, ucla_static.lat2d.values).any(dim='region')
     
     # GridMET
-    sample_gridmet = xr.open_zarr(os.path.join(VAULT_DIR, "gridmet/2021_daily_4km_gridMET_data.zarr"))
+    sample_gridmet = xr.open_zarr(GRIDMET_GRID_FILE)
     masks_2d['GridMET'] = get_mask(gdf, sample_gridmet.lon, sample_gridmet.lat).any(dim='region')
     
     # HRRR
-    sample_hrrr = xr.open_zarr(os.path.join(VAULT_DIR, "weather_data/2014-12_HRRR_data.zarr"))
+    sample_hrrr = xr.open_zarr(HRRR_GRID_FILE)
     masks_2d['HRRR'] = get_mask(gdf, sample_hrrr.longitude, sample_hrrr.latitude).any(dim='region')
 
     years = sorted(df_bulk['date'].dt.year.unique())
-    print(f"Starting parallel extraction across {len(years)} years with n_jobs=12...")
-    
-    results = Parallel(n_jobs=12)(
+    print(f"Starting parallel extraction across {len(years)} years with n_jobs={N_JOBS}...")
+
+    results = Parallel(n_jobs=N_JOBS)(
         delayed(process_year)(
             year, 
             df_bulk[df_bulk['date'].dt.year == year]['date'].dt.normalize().unique(), 
@@ -474,7 +577,7 @@ def main():
             df_bulk_updated[col] = np.nan
 
     # Deduplicate contiguous events by keeping highest prism_7d_tot
-    print("Deduplicating contiguous events by prism_3d_tot...")
+    print("Deduplicating contiguous events by prism_7d_tot...")
     df_bulk_updated = deduplicate_events_by_prism(df_bulk_updated)
 
     # Save the updated CSV
