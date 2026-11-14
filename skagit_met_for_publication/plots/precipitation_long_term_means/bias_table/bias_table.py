@@ -1,25 +1,41 @@
-"""
-Build a bias table of long-term mean water-year precipitation for each
-dataset relative to PRISM, by region.
+"""Bias table of long-term mean water-year precipitation relative to PRISM, by region.
 
-Mean Bias (mm) = PRISM mean - Dataset mean
-%Bias          = Mean Bias / PRISM mean * 100
+For each region (full Skagit and the three HUC8 sub-basins) and each dataset,
+the water-year totals are averaged over all water years in the input CSV and
+compared with the PRISM mean:
 
-Outputs (written next to this script):
+    Mean Bias (mm) = PRISM mean - Dataset mean
+    %Bias          = Mean Bias / PRISM mean * 100
+
+(a positive bias means the dataset is drier than PRISM). The table is saved
+as a CSV and rendered as a PNG.
+
+Input
+    plots/precipitation_long_term_means/water_year_cumulative_precipitation.csv
+        (written by ../water_year_cumulative.py)
+Output (written next to this script)
     precipitation_bias_table.csv
     precipitation_bias_table.png
+
+Usage
+    python bias_table.py
 """
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-BASE_DIR = Path("/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication/plots/precipitation_long_term_means")
-INPUT_CSV = BASE_DIR / "water_year_cumulative_precipitation.csv"
-OUT_CSV = BASE_DIR / "bias_table" /  "precipitation_bias_table.csv"
-OUT_PNG = BASE_DIR / "bias_table" / "precipitation_bias_table.png"
+# Paths: the input CSV is in the parent folder, outputs are written next to this script
+SCRIPT_DIR = Path(__file__).resolve().parent
+INPUT_CSV = SCRIPT_DIR.parent / "water_year_cumulative_precipitation.csv"
+OUT_CSV = SCRIPT_DIR / "precipitation_bias_table.csv"
+OUT_PNG = SCRIPT_DIR / "precipitation_bias_table.png"
 
 REFERENCE = "PRISM"
+
+# Table figure settings
+FONT_SIZE = 10
+DPI = 300
 
 # CSV region prefix -> label in the table (order kept)
 REGIONS = {
@@ -40,6 +56,7 @@ DATASETS = {
 
 
 def build_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Return one row per (region, dataset) with the means and the bias relative to REFERENCE."""
     means = df.drop(columns="WaterYear").mean()
     rows = []
     for region_key, region_label in REGIONS.items():
@@ -59,6 +76,7 @@ def build_table(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_table(table: pd.DataFrame, path: Path) -> None:
+    """Render the table as an image (region shown once per block, header and region names in bold)."""
     display = table.copy()
     # Show the region name only on the first row of each block
     display.loc[display["Region"].duplicated(), "Region"] = ""
@@ -72,7 +90,7 @@ def plot_table(table: pd.DataFrame, path: Path) -> None:
     tbl = ax.table(cellText=cell_text, colLabels=list(display.columns),
                    loc="center", cellLoc="right", colLoc="left")
     tbl.auto_set_font_size(False)
-    tbl.set_fontsize(10)
+    tbl.set_fontsize(FONT_SIZE)
     tbl.scale(1, 1.3)
     tbl.auto_set_column_width(list(range(len(display.columns))))
 
@@ -82,7 +100,7 @@ def plot_table(table: pd.DataFrame, path: Path) -> None:
         if r == 0 or (c == 0 and cell.get_text().get_text()):
             cell.set_text_props(weight="bold")
 
-    fig.savefig(path, dpi=300, bbox_inches="tight")
+    fig.savefig(path, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
 
 

@@ -1,45 +1,71 @@
-"""
-Create a 3x2 grid of hourly plots for six AR events comparing CONUS404, UCLA, and PNNL
-precipitation with USGS discharge. Same data pipeline as create_ar_events_plots.py.
+"""Plot a 3x2 grid of hourly precipitation with USGS discharge for six AR events.
+
+Each panel (a-f) shows one AR event from ``date_ranges`` (about 8-15 days
+around the event date): hourly basin-mean precipitation [mm/h] from CONUS404,
+UCLA (WRF-ERA5 d02) and PNNL (WRF), with USGS daily discharge [m^3/s] on a
+secondary y-axis. One shared legend is placed below the grid.
+
+Same data processing as create_ar_events_plots.py:
+basin mean = mean over the model grid cells whose centres fall inside the
+Skagit basin boundary (SkagitBoundary.json); UCLA hourly precipitation is the
+hourly increment of accumulated RAINC + RAINNC; hourly gaps in CONUS404 and
+PNNL are filled with NaN so lines are not drawn across missing hours.
+
+Inputs:
+    <BASE_DIR>/data/GIS/SkagitBoundary.json         basin boundary
+    <BASE_DIR>/data/usgs_12200500_discharge.rdb     USGS 12200500 daily discharge
+    External hourly model data - see "PATHS - external" below.
+
+Output (in this script's folder):
+    ar_events_hourly_grid.png
+
+Usage:
+    python create_ar_events_grid_plot.py
 """
 
-import xarray as xr
+from datetime import datetime, timedelta
+from pathlib import Path
+
 import geopandas as gpd
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
-from datetime import datetime, timedelta
-import tempfile
-import zipfile
-import rioxarray
-import regionmask
-import os
+import xarray as xr
 
-# Configuration
-BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication"
-BOUNDARY_PATH = os.path.join(BASE_DIR, "data/GIS/SkagitBoundary.json")
-DISCHARGE_PATH = os.path.join(BASE_DIR, "data/usgs_12200500_discharge.rdb")
+# ============================================================================
+# PATHS - project files (relative to this script)
+# ============================================================================
+SCRIPT_DIR = Path(__file__).resolve().parent              # plots/storm_patterns/
+BASE_DIR = SCRIPT_DIR.parents[1]                          # skagit_met_for_publication/
+OUTPUT_DIR = SCRIPT_DIR
+BOUNDARY_PATH = BASE_DIR / "data/GIS/SkagitBoundary.json"
+DISCHARGE_PATH = BASE_DIR / "data/usgs_12200500_discharge.rdb"
 
-# BOUNDARY_PATH = Path("/data0/nksp2/skagit/skagit_2/skagit-met/data/GIS/SkagitBoundary.json")
-# DISCHARGE_PATH = Path("/data0/nksp2/skagit/skagit_2/skagit-met/experiments_2/data/usgs_12200500_discharge.rdb")
-
-# Data paths
-conus_data_path = Path("/data0/skagit_met/data_transfer/data/CONUS_hourly/hourly_ar_non_ar_events")
-ucla_data_path = Path("/data0/skagit_met/data_transfer/data/ucla_era5_d02_hourly/hourly_ar_non_ar_events")
+# ============================================================================
+# PATHS - external model data (edit to your local copies)
+# ============================================================================
+VAULT_DIR = Path("/data0/skagit_met/data_transfer/data")
+conus_data_path = VAULT_DIR / "CONUS_hourly/hourly_ar_non_ar_events"
+ucla_data_path = VAULT_DIR / "ucla_era5_d02_hourly/hourly_ar_non_ar_events"
 ucla_coords_file = Path("/data0/hernanqd/instance_2021_data/preparing_datasets/UCLA/wrfinput_d02_coord.nc")
-pnnl_grid_file = Path("/data0/skagit_met/data_transfer/data/PNNL/historical/SERDP6km.geo_em.d01.nc")
-
-# PRISM data
-VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-HUC8_GEO = Path(BASE_DIR) / "data/GIS/SkagitSubBasin_HUC8.geojson"
-PRISM_ROOT = Path(VAULT_DIR) / "prism_new_hq"
+PNNL_DIR = VAULT_DIR / "PNNL/historical"                  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
+pnnl_grid_file = PNNL_DIR / "SERDP6km.geo_em.d01.nc"
 
 # Publication font sizes (figures are 16 in wide; expect ~0.45x reduction to journal page width)
 FONT_TITLE = 20
 FONT_LABEL = 20
 FONT_TICK = 17
 FONT_LEGEND = 17
+
+# Colors
+COLOR_CONUS = '#1f77b4'
+COLOR_UCLA = '#ff7f0e'
+COLOR_PNNL = '#2ca02c'
+
+# Other settings
+CFS_TO_CMS = 0.0283168   # 1 ft^3/s = 0.0283168 m^3/s
+DPI = 300                # resolution of the saved figure
 
 # Helper functions
 def load_usgs_rdb(filepath, param_name):
@@ -62,7 +88,7 @@ def load_usgs_rdb(filepath, param_name):
 
 def get_pnnl_data_path(year):
     """Get PNNL data path for a given year."""
-    pnnl_path = Path(f"/data0/skagit_met/data_transfer/data/PNNL/historical/{year}/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc")
+    pnnl_path = PNNL_DIR / str(year) / f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc"
     if pnnl_path.exists():
         return pnnl_path
     else:
@@ -86,83 +112,6 @@ def fill_missing_times(times, values):
     df_filled = df.asfreq('1h')
 
     return df_filled.index.values, df_filled['value'].values
-
-def get_decade_folder(year: int) -> str:
-    """Get decade folder name for PRISM data organization."""
-    if 2021 <= year <= 2024:
-        return "2021-2024"
-    start_decade = (year // 10) * 10
-    if start_decade == 1980 and year > 1980:
-        return "1981-1990"
-    if year % 10 == 0 and year > 1980:
-        return f"{start_decade-9}-{start_decade}"
-    if start_decade % 10 == 0:
-        return f"{start_decade+1}-{start_decade+10}"
-    return f"{start_decade}-{(year//10)*10+9}"
-
-def load_prism_from_new_format(date, prism_root):
-    """Load PRISM data from new format (TIFF) zip file for a specific date."""
-    date_str = date.strftime('%Y%m%d')
-    year = date.year
-    decade_folder = get_decade_folder(year)
-    zip_path = Path(prism_root) / decade_folder / f"prism_ppt_us_25m_{date_str}.zip"
-
-    if not zip_path.exists():
-        return None
-
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(zip_path, 'r') as z:
-                z.extractall(tmpdir)
-                for root, dirs, files in os.walk(tmpdir):
-                    for f in files:
-                        if f.endswith('.tif'):
-                            filepath = Path(root) / f
-                            da = rioxarray.open_rasterio(str(filepath))
-                            return da.squeeze().copy(deep=True)
-    except Exception as e:
-        pass
-
-    return None
-
-def calculate_basin_mean(da, mask_2d):
-    """Calculate spatial mean over masked basin region."""
-    data = da.values
-    mask = mask_2d.values if hasattr(mask_2d, 'values') else mask_2d
-
-    if data.ndim == 3:
-        time_steps = data.shape[0]
-        data_flat = data.reshape(time_steps, -1)
-        mask_flat = mask.flatten()
-        mask_idx = mask_flat > 0
-        if mask_idx.any():
-            mean_vals = np.nanmean(data_flat[:, mask_idx], axis=1)
-        else:
-            mean_vals = np.full(time_steps, np.nan)
-        time_coord = da.time.values if 'time' in da.coords else range(time_steps)
-        return pd.Series(mean_vals, index=pd.to_datetime(time_coord))
-    elif data.ndim == 2:
-        data = data.astype(float)
-        data[data < 0] = np.nan
-        data_flat = data.flatten()
-        mask_flat = mask.flatten()
-        mask_idx = mask_flat > 0
-        if mask_idx.any():
-            mean_val = np.nanmean(data_flat[mask_idx])
-        else:
-            mean_val = np.nan
-        return mean_val
-    else:
-        raise ValueError(f"Unexpected data dimensions: {data.ndim}")
-
-def get_mask(gdf, lon, lat):
-    """Create spatial mask for basin regions."""
-    mask = regionmask.mask_3D_geopandas(gdf, lon, lat)
-    region_indices = []
-    for r in ["Upper Skagit", "Sauk", "Lower Skagit"]:
-        idx = gdf[gdf["Name"].str.contains(r, case=False)].index[0]
-        region_indices.append(idx)
-    return mask.sel(region=region_indices)
 
 # ============================================================================
 # LOAD AND PREPARE DATA
@@ -219,7 +168,7 @@ print("LOADING DISCHARGE DATA")
 print("=" * 70)
 df_discharge_all = load_usgs_rdb(DISCHARGE_PATH, 'discharge_cfs')
 # Convert cfs to cms (1 cfs = 0.0283168 cms)
-df_discharge_all['discharge_cms'] = df_discharge_all['discharge_cfs'] * 0.0283168
+df_discharge_all['discharge_cms'] = df_discharge_all['discharge_cfs'] * CFS_TO_CMS
 print(f"Loaded {len(df_discharge_all)} discharge records")
 
 # ============================================================================
@@ -229,11 +178,9 @@ print("\n" + "=" * 70)
 print("CREATING 3x2 GRID FOR AR EVENTS")
 print("=" * 70)
 
-# # Date ranges for AR events (date_start_ucla, date_start_conus_pnnl, date_end, event_date, ar_category)
+# Date ranges for AR events (date_start_ucla, date_start_conus_pnnl, date_end, event_date, ar_category)
 date_ranges = [
     (datetime(1990, 11, 20, 23, 0, 0), datetime(1990, 11, 21, 0, 0, 0), datetime(1990, 11, 29, 23, 0, 0), "1990-11-24", "5.0"),
-    # (datetime(1995, 11, 25, 23, 0, 0), datetime(1995, 11, 26, 0, 0, 0), datetime(1995, 12, 4, 23, 0, 0), "1995-11-29", "4.0"),
-    # (datetime(1990, 11, 6, 23, 0, 0), datetime(1990, 11, 7, 0, 0, 0), datetime(1990, 11, 15, 23, 0, 0), "1990-11-10", "4.0"),
     (datetime(1995, 11, 26, 23, 0, 0), datetime(1995, 11, 27, 0, 0, 0), datetime(1995, 12, 5, 23, 0, 0), "1995-11-30", "4.0"),
     (datetime(1990, 11, 9, 23, 0, 0), datetime(1990, 11, 10, 0, 0, 0), datetime(1990, 11, 18, 23, 0, 0), "1990-11-13", "4.0"),
     (datetime(2006, 11, 3, 23, 0, 0), datetime(2006, 11, 4, 0, 0, 0), datetime(2006, 11, 12, 23, 0, 0), "2006-11-07", "5.0"),
@@ -241,27 +188,10 @@ date_ranges = [
     (datetime(2021, 11, 12, 23, 0, 0), datetime(2021, 11, 13, 0, 0, 0), datetime(2021, 11, 20, 23, 0, 0), "2021-11-15", "4.0"),
 ]
 
-# # Date ranges for AR0 events (date_start_ucla, date_start_conus_pnnl, date_end, event_date, ar_category)
-# date_ranges = [
-#     (datetime(1995, 11, 28, 23, 0, 0), datetime(1995, 11, 29, 0, 0, 0), datetime(1995, 12, 7, 23, 0, 0), "1995-12-02", "0.0"),
-#     (datetime(2011, 1, 14, 23, 0, 0), datetime(2011, 1, 15, 0, 0, 0), datetime(2011, 1, 23, 23, 0, 0), "2011-01-18", "0.0"),
-#     (datetime(2015, 11, 10, 23, 0, 0), datetime(2015, 11, 11, 0, 0, 0), datetime(2015, 11, 19, 23, 0, 0), "2015-11-14", "0.0"),
-#     (datetime(2007, 3, 9, 23, 0, 0), datetime(2007, 3, 10, 0, 0, 0), datetime(2007, 3, 19, 22, 0, 0), "2007-03-13", "0.0"),
-#     # (datetime(2021, 11, 29, 23, 0, 0), datetime(2021, 11, 30, 0, 0, 0), datetime(2021, 12, 7, 23, 0, 0), "2021-12-03", "0.0"),
-#     (datetime(2010, 12, 10, 23, 0, 0), datetime(2010, 12, 11, 0, 0, 0), datetime(2010, 12, 19, 23, 0, 0), "2010-12-14", "0.0"),
-#     (datetime(2009, 11, 23, 23, 0, 0), datetime(2009, 11, 24, 0, 0, 0), datetime(2009, 12, 2, 23, 0, 0), "2009-11-27", "0.0"),
-
-# ]
-
 def load_data_for_period(date_start, date_end, date_start_ucla=None):
-    """Load CONUS, UCLA, PNNL, and PRISM data for a given period."""
+    """Load CONUS, UCLA and PNNL basin-mean hourly precipitation for a given period."""
     if date_start_ucla is None:
         date_start_ucla = date_start - timedelta(hours=1)
-
-    # Generate date range for PRISM extraction (extend by 1 day)
-    date_start_ts = pd.Timestamp(date_start)
-    date_end_ts = pd.Timestamp(date_end)
-    prism_dates = pd.date_range(date_start_ts.date(), date_end_ts.date() + timedelta(days=1), freq='D').tolist()
 
     # CONUS
     conus_files_list = sorted(conus_data_path.glob('*.PREC_ACC_NC.wrf2d_d01_*.nc'))
@@ -365,39 +295,11 @@ def load_data_for_period(date_start, date_end, date_start_ucla=None):
             spatial_mean_pnnl = data_masked_pnnl.mean(dim=['x', 'y'], skipna=True).values
             times_pnnl = pd.to_datetime(ds_pnnl_subset.time.values)
 
-    # Extract PRISM daily data
-    spatial_mean_prism = None
-    times_prism = None
-    try:
-        if HUC8_GEO.exists():
-            gdf = gpd.read_file(HUC8_GEO).to_crs("EPSG:4326")
-            prism_data = {}
-
-            for date in prism_dates:
-                try:
-                    da = load_prism_from_new_format(date, PRISM_ROOT)
-                    if da is None:
-                        continue
-                    lon = da.x.values
-                    lat = da.y.values
-                    m_prism = get_mask(gdf, lon, lat).any(dim='region')
-                    mean_val = calculate_basin_mean(da, m_prism)
-                    prism_data[date.normalize() if hasattr(date, 'normalize') else pd.Timestamp(date)] = mean_val
-                except Exception as date_error:
-                    pass
-
-            if prism_data:
-                times_prism = np.array(list(prism_data.keys()))
-                spatial_mean_prism = np.array([prism_data[t] for t in times_prism])
-    except Exception as e:
-        pass
-
-    return spatial_mean_conus, times_conus, spatial_mean_ucla, times_ucla, spatial_mean_pnnl, times_pnnl, spatial_mean_prism, times_prism
+    return spatial_mean_conus, times_conus, spatial_mean_ucla, times_ucla, spatial_mean_pnnl, times_pnnl
 
 # ============================================================================
 # 3x2 GRID OF HOURLY PLOTS
 # ============================================================================
-import matplotlib.dates as mdates
 
 # Grid font sizes (figure is 16 in wide; ~0.45x reduction to journal page width)
 GRID_FONT_TITLE = 23
@@ -414,7 +316,7 @@ for idx, (ax, (date_start_ucla, date_start, date_end, event_date, ar_category)) 
     print(f"\nProcessing event {idx + 1}/{len(date_ranges)}: {event_date} (AR={ar_category})")
 
     # Load data for this period
-    spatial_mean_conus, times_conus, spatial_mean_ucla, times_ucla, spatial_mean_pnnl, times_pnnl, spatial_mean_prism, times_prism = \
+    spatial_mean_conus, times_conus, spatial_mean_ucla, times_ucla, spatial_mean_pnnl, times_pnnl = \
         load_data_for_period(date_start, date_end, date_start_ucla)
 
     # Fill missing times with NaN to prevent line connections across gaps
@@ -428,17 +330,17 @@ for idx, (ax, (date_start_ucla, date_start, date_end, event_date, ar_category)) 
     if spatial_mean_conus is not None:
         mask_conus = ~np.isnan(spatial_mean_conus)
         ax.plot(times_conus[mask_conus], spatial_mean_conus[mask_conus], marker='o', linewidth=2, markersize=3,
-                color='#1f77b4', label='CONUS404', alpha=0.8)
+                color=COLOR_CONUS, label='CONUS404', alpha=0.8)
 
     if spatial_mean_ucla is not None:
         mask_ucla = ~np.isnan(spatial_mean_ucla)
         ax.plot(times_ucla[mask_ucla], spatial_mean_ucla[mask_ucla], marker='s', linewidth=2, markersize=3,
-                color='#ff7f0e', label='UCLA', alpha=0.8)
+                color=COLOR_UCLA, label='UCLA', alpha=0.8)
 
     if spatial_mean_pnnl is not None:
         mask_pnnl = ~np.isnan(spatial_mean_pnnl)
         ax.plot(times_pnnl[mask_pnnl], spatial_mean_pnnl[mask_pnnl], marker='^', linewidth=2, markersize=3,
-                color='#2ca02c', label='PNNL', alpha=0.8)
+                color=COLOR_PNNL, label='PNNL', alpha=0.8)
 
     # Secondary y-axis for discharge
     ax2 = ax.twinx()
@@ -489,8 +391,8 @@ for line in leg.get_lines():
     line.set_markersize(9)
     line.set_alpha(1.0)
 
-output_path = Path("/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication/plots/storm_patterns/ar_events_hourly_grid.png")
-fig.savefig(output_path, dpi=300, bbox_inches='tight')
+output_path = OUTPUT_DIR / "ar_events_hourly_grid.png"
+fig.savefig(output_path, dpi=DPI, bbox_inches='tight')
 print(f"\nGrid plot saved to: {output_path}")
 plt.close(fig)
 

@@ -1,68 +1,73 @@
-"""Generate spatial bias maps for non-AR events across weather products (8-day windows).
+"""Spatial bias maps of 8-day cumulative precipitation during non-AR events.
 
-Extracts 8-day cumulative precipitation (T-2 to T+5) for 6 selected non-AR precipitation
-events (AR0 classification) from multiple weather datasets (PRISM, Daymet, PNNL,
-CONUS404, UCLA, GridMET). Regrids all products to the PRISM 4km reference grid,
-computes biases relative to PRISM baseline, and generates a 6 × 5 grid visualization
-where each row represents a non-AR event and each column shows the bias for one product.
+For 6 selected non-AR precipitation events (AR scale 0), the cumulative
+precipitation of each product over an 8-day window (T-2 to T+5, where T is the event day)
+is computed from PRISM, Daymet, PNNL, CONUS404 (hourly), UCLA (hourly) and
+GridMET, regridded (linear) to the PRISM 4 km grid and masked to the Skagit
+watershed. The figure is a 6 x 5 grid of maps: one row per event and one
+column per product, showing the bias relative to PRISM (product - PRISM).
+SNOTEL station totals are overlaid as dots coloured by their own bias
+(SNOTEL - PRISM at the station). The colour range is symmetric, set by the
+99.5th percentile of the absolute bias over all maps.
 
-Outputs one high-resolution PNG figure to spatial_plots/plots/
+Input
+    /data0/skagit_met/data_transfer/data/...   (gridded and hourly products, outside this repository)
+    data/GIS/SkagitBoundary.json, data/GIS/SkagitSubBasin_HUC8.geojson
+    data/weather_data/<start>_<end>_SNOTEL_daily_data.zarr   (one per event)
+Output
+    plots/spatial_bias_distribution/plots/non_ar_events_cumulative_spatial_bias_grid_8_days.png
+
+Usage
+    python plot_non_ar_events_cumulative_spatial_bias_grid_8_days_updated.py
 """
 
 import os
-import numpy as np
-import xarray as xr
-import pandas as pd
-import geopandas as gpd
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
+import subprocess
+import sys
+import tempfile
+import warnings
+import zipfile
+from datetime import timedelta
+from pathlib import Path
+
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-import warnings
-from scipy.interpolate import griddata
-import subprocess
-import zipfile
-import tempfile
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import rioxarray
+import xarray as xr
+from scipy.interpolate import griddata
 
 warnings.filterwarnings('ignore')
 
 # --- Configuration & Paths ---
-BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication"
-DATA_DIR = os.path.join(BASE_DIR, "data")
+# Shared raw-data archive (outside this repository)
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
 PRISM_ROOT = os.path.join(VAULT_DIR, "prism_new_hq")
 DAYMET_ROOT = os.path.join(VAULT_DIR, "daymet_new_hq")
-BOUNDARY_PATH = os.path.join(BASE_DIR, "data/GIS/SkagitBoundary.json")
-SUBBASIN_PATH  = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
-OUT_DIR = os.path.join(BASE_DIR, "plots/spatial_bias_distribution/plots")
+
+# Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
+BASE_DIR = Path(__file__).resolve().parents[2]
+DATA_DIR = BASE_DIR / "data"
+BOUNDARY_PATH = BASE_DIR / "data" / "GIS" / "SkagitBoundary.json"
+SUBBASIN_PATH = BASE_DIR / "data" / "GIS" / "SkagitSubBasin_HUC8.geojson"
+OUT_DIR = Path(__file__).resolve().parent / "plots"
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# --- AR Event windows (exact dates from cumulative precipitation plot) ---
+# Product locations in the archive
+PNNL_GEO = os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc")  # PNNL grid coordinates
+PNNL_DIR = os.path.join(VAULT_DIR, "PNNL/historical")  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
+UCLA_STATIC = os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc")  # UCLA grid coordinates
+CONUS_HOURLY_DIR = Path(VAULT_DIR) / "CONUS_hourly" / "hourly_ar_non_ar_events"
+UCLA_HOURLY_DIR = Path(VAULT_DIR) / "ucla_era5_d02_hourly" / "hourly_ar_non_ar_events"
+GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")  # <year>_daily_4km_gridMET_data.zarr
+SNOTEL_DIR = DATA_DIR / "weather_data"  # <start>_<end>_SNOTEL_daily_data.zarr
+SNOTEL_DOWNLOADER = BASE_DIR / "downloaders" / "snotel_downloader.py"  # used only if a SNOTEL zarr is missing
 
-# AR_EVENTS = [
-#     # {"label": "November_2021_AR0", "start": "2021-11-14", "end": "2021-11-21", "row_label": "Nov 14–21, 2021\n(AR0)"},
-#     {"label": "December_1995_AR0", "start": "1995-11-30", "end": "1995-12-07", "row_label": "Nov 30–Dec 7, 1995\n(AR0)"},
-#     # {"label": "November_1990_AR0", "start": "1990-11-12", "end": "1990-11-19", "row_label": "Nov 12–19, 1990\n(AR0)"},
-#     {"label": "November_2011_AR0", "start": "2011-11-16", "end": "2011-11-23", "row_label": "Nov 16–23, 2011\n(AR0)"},
-#     {"label": "November_2015_AR0", "start": "2015-11-12", "end": "2015-11-19", "row_label": "Nov 12–19, 2015\n(AR0)"},
-#     {"label": "March_2007_AR0", "start": "2007-03-11", "end": "2007-03-18", "row_label": "Mar 11–18, 2007\n(AR0)"},
-#     {"label": "December_2010_AR0", "start": "2010-12-12", "end": "2010-12-19", "row_label": "Dec 12–19, 2010\n(AR0)"},
-#     {"label": "November_2009_AR0", "start": "2009-11-25", "end": "2009-12-02", "row_label": "Nov 25–Dec 2, 2009\n(AR0)"}
-# ]
-
-# AR_EVENTS = [
-#     {"label": "June_1985_AR0", "start": "1985-06-06", "end": "1985-06-13", "row_label": "Jun 6–13, 1985\n(AR0)"},
-#     {"label": "June_2020_AR0", "start": "2020-05-30", "end": "2020-06-06", "row_label": "May 30–Jun 6, 2020\n(AR0)"},
-#     {"label": "July_2022_AR0", "start": "2022-07-03", "end": "2022-07-10", "row_label": "Jul 3–10, 2022\n(AR0)"},
-#     {"label": "June_1997_AR0", "start": "1997-06-22", "end": "1997-06-29", "row_label": "Jun 22–29, 1997\n(AR0)"},
-#     {"label": "July_1982_AR0", "start": "1982-07-02", "end": "1982-07-09", "row_label": "Jul 2–9, 1982\n(AR0)"},
-#     {"label": "June_2002_AR0", "start": "2002-06-17", "end": "2002-06-24", "row_label": "Jun 17–24, 2002\n(AR0)"}
-# ]
-
-
-# 5day window taking the min
-AR_EVENTS = [
+# --- Non-AR event windows (5-day window, taking the min): 8 days, T-2 to T+5 around the event day T ---
+NON_AR_EVENTS = [
     {"label": "April_1996_AR0", "start": "1996-04-23", "end": "1996-04-30", "row_label": "Apr 23–30, 1996\n(AR0)"},
     {"label": "August_2004_AR0", "start": "2004-08-24", "end": "2004-08-31", "row_label": "Aug 24–31, 2004\n(AR0)"},
     {"label": "December_2017_AR0", "start": "2017-12-28", "end": "2018-01-04", "row_label": "Dec 28, 2017–Jan 4, 2018\n(AR0)"},
@@ -71,8 +76,22 @@ AR_EVENTS = [
     {"label": "February_1982_AR0", "start": "1982-01-30", "end": "1982-02-06", "row_label": "Jan 30–Feb 6, 1982\n(AR0)"}
 ]
 
-PRODUCTS = ['PRISM', 'Daymet', 'PNNL', 'CONUS404', 'UCLA', 'GridMET'] #'ORNL (Daymet)', 'HRRR'
+PRODUCTS = ['PRISM', 'Daymet', 'PNNL', 'CONUS404', 'UCLA', 'GridMET']
 BIAS_PRODUCTS = [p for p in PRODUCTS if p != 'PRISM']
+
+MM_PER_INCH = 25.4  # SNOTEL precipitation is in inches
+BIAS_PERCENTILE = 0.995  # colour range = this quantile of |bias| over all maps
+BIAS_CMAP = "RdBu_r"
+
+# Figure settings. Publication font sizes (figure is ~15 in wide; expect ~0.45x reduction to journal page width)
+FIGSIZE = (15, 17.5)
+DPI = 300
+FONT_SUPTITLE = 24
+FONT_TITLE = 18       # column titles
+FONT_ROW_LABEL = 18
+FONT_CBAR_LABEL = 18
+FONT_CBAR_TICK = 16
+FONT_NA = 16
 
 # Crop bounding box: Skagit domain
 BB = (-122.5, -120.5, 47.8, 49.5)  # lon_min, lon_max, lat_min, lat_max
@@ -147,7 +166,7 @@ def load_daymet_from_netcdf(year, daymet_root):
 print("Loading static grid coordinates...")
 
 # Load PNNL 6km coordinates (for PNNL product, not reference)
-ds_pnnl_static = xr.open_dataset(os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc"))
+ds_pnnl_static = xr.open_dataset(PNNL_GEO)
 pnnl_lon_full = ds_pnnl_static.XLONG_M.values[0]
 pnnl_lat_full = ds_pnnl_static.XLAT_M.values[0]
 ds_pnnl_static.close()
@@ -161,34 +180,10 @@ if da_prism_sample is not None:
 else:
     raise FileNotFoundError(f"Could not find PRISM data for reference date {prism_sample_date.date()}")
 
-ds_ucla_static = xr.open_dataset("/data0/hernanqd/instance_2021_data/preparing_datasets/UCLA/wrfinput_d02_coord.nc")
+ds_ucla_static = xr.open_dataset(UCLA_STATIC)
 ucla_lon = ds_ucla_static.lon2d.values
 ucla_lat = ds_ucla_static.lat2d.values
 ds_ucla_static.close()
-
-# HRRR coordinates
-hrrr_lon = None
-hrrr_lat = None
-for y in range(2014, 2022):
-    for m in range(1, 13):
-        p = os.path.join(VAULT_DIR, "weather_data", f"{y}-{m:02d}_HRRR_data.zarr")
-        if os.path.exists(p):
-            try:
-                ds_h = xr.open_zarr(p, consolidated=False)
-                hrrr_lon = ds_h.longitude.values
-                hrrr_lat = ds_h.latitude.values
-                ds_h.close()
-                break
-            except Exception:
-                pass
-    if hrrr_lon is not None:
-        break
-
-# # Crop reference PNNL 6km grid (commented out; using PRISM 4km instead)
-# row_min_p, row_max_p, col_min_p, col_max_p = crop_rows_cols(pnnl_lon_full, pnnl_lat_full)
-# ref_lon = pnnl_lon_full[row_min_p:row_max_p+1, col_min_p:col_max_p+1]
-# ref_lat = pnnl_lat_full[row_min_p:row_max_p+1, col_min_p:col_max_p+1]
-# print(f"Reference 6km grid shape: {ref_lon.shape}")
 
 # Crop reference PRISM grid
 if prism_lon_full.ndim == 1 and prism_lat_full.ndim == 1:
@@ -200,17 +195,10 @@ ref_lon = prism_lon_2d[row_min_p:row_max_p+1, col_min_p:col_max_p+1]
 ref_lat = prism_lat_2d[row_min_p:row_max_p+1, col_min_p:col_max_p+1]
 print(f"Reference PRISM grid shape: {ref_lon.shape}")
 
-# Crop UCLA & HRRR coordinate arrays
+# Crop UCLA coordinate arrays
 row_min_u, row_max_u, col_min_u, col_max_u = crop_rows_cols(ucla_lon, ucla_lat)
 ucla_lon_c = ucla_lon[row_min_u:row_max_u+1, col_min_u:col_max_u+1]
 ucla_lat_c = ucla_lat[row_min_u:row_max_u+1, col_min_u:col_max_u+1]
-
-if hrrr_lon is not None:
-    row_min_h, row_max_h, col_min_h, col_max_h = crop_rows_cols(hrrr_lon, hrrr_lat)
-    hrrr_lon_c = hrrr_lon[row_min_h:row_max_h+1, col_min_h:col_max_h+1]
-    hrrr_lat_c = hrrr_lat[row_min_h:row_max_h+1, col_min_h:col_max_h+1]
-else:
-    hrrr_lon_c = hrrr_lat_c = None
 
 # Load GIS boundaries
 boundary_gdf = gpd.read_file(BOUNDARY_PATH)
@@ -289,24 +277,23 @@ def load_event_grids(event):
     except Exception as e:
         print(f"    [WARN] PRISM: {e}")
 
-    # 2. Daymet (new netCDF source) & ORNL (same source)
+    # 2. Daymet (new netCDF source)
     try:
         ds = load_daymet_from_netcdf(year, DAYMET_ROOT)
         if ds is not None:
             ds['time'] = pd.to_datetime(ds.time.values).normalize()
             da = ds['prcp'].sel(time=slice(start, end)).sum(dim='time').compute()
-            grids['Daymet']        = da
-            grids['ORNL (Daymet)'] = da
+            grids['Daymet'] = da
             ds.close()
-            print("    Daymet/ORNL OK")
+            print("    Daymet OK")
         else:
             print(f"    [WARN] Daymet: file not found for year {year}")
     except Exception as e:
-        print(f"    [WARN] Daymet/ORNL: {e}")
+        print(f"    [WARN] Daymet: {e}")
 
     # 3. PNNL WRF
     try:
-        pnnl_file = os.path.join(VAULT_DIR, "PNNL/historical", str(year),
+        pnnl_file = os.path.join(PNNL_DIR, str(year),
                                  f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc")
         if os.path.exists(pnnl_file):
             ds = xr.open_dataset(pnnl_file, chunks={'time': 720})
@@ -328,9 +315,7 @@ def load_event_grids(event):
 
     # 4. CONUS404 (hourly)
     try:
-        from pathlib import Path
-        conus_data_path = Path("/data0/skagit_met/data_transfer/data/CONUS_hourly/hourly_ar_non_ar_events")
-        conus_files_list = sorted(conus_data_path.glob('*.PREC_ACC_NC.wrf2d_d01_*.nc'))
+        conus_files_list = sorted(CONUS_HOURLY_DIR.glob('*.PREC_ACC_NC.wrf2d_d01_*.nc'))
         conus_files_in_range = []
         for f in conus_files_list:
             try:
@@ -339,7 +324,7 @@ def load_event_grids(event):
                 if pd.Timestamp(start) <= pd.Timestamp(time) <= pd.Timestamp(end):
                     conus_files_in_range.append(f)
                 ds_temp.close()
-            except:
+            except Exception:
                 pass
 
         if conus_files_in_range:
@@ -358,18 +343,15 @@ def load_event_grids(event):
 
     # 5. UCLA (hourly)
     try:
-        from pathlib import Path
-        from datetime import timedelta
-        ucla_data_path = Path("/data0/skagit_met/data_transfer/data/ucla_era5_d02_hourly/hourly_ar_non_ar_events")
-
-        # Generate list of hourly filenames in the event window
+        # Generate list of hourly filenames in the event window (one extra hour
+        # before the start, since precipitation is the difference of accumulations)
         date_start_ucla = pd.Timestamp(start) - timedelta(hours=1)
         date_end = pd.Timestamp(end)
         current = date_start_ucla
         ucla_filenames = []
         while current <= date_end:
             fn = f"auxhist_d01_{current.strftime('%Y-%m-%d_%H:%M:%S')}.nc"
-            ucla_filenames.append(ucla_data_path / fn)
+            ucla_filenames.append(UCLA_HOURLY_DIR / fn)
             current += timedelta(hours=1)
 
         ucla_files_exist = [f for f in ucla_filenames if f.exists()]
@@ -396,7 +378,7 @@ def load_event_grids(event):
 
     # 6. GridMET
     try:
-        gridmet_path = os.path.join(VAULT_DIR, "gridmet", f"{year}_daily_4km_gridMET_data.zarr")
+        gridmet_path = os.path.join(GRIDMET_DIR, f"{year}_daily_4km_gridMET_data.zarr")
         if os.path.exists(gridmet_path):
             ds = xr.open_zarr(gridmet_path)
             if 'day' in ds.dims:
@@ -408,56 +390,6 @@ def load_event_grids(event):
     except Exception as e:
         print(f"    [WARN] GridMET: {e}")
 
-    # 7. HRRR  (available 2014–)
-    if year >= 2014 and hrrr_lon_c is not None:
-        try:
-            start_dt = pd.Timestamp(start)
-            end_dt   = pd.Timestamp(end)
-            months_needed = set()
-            cur = start_dt
-            while cur <= end_dt:
-                months_needed.add((cur.year, cur.month))
-                cur += pd.DateOffset(months=1)
-            # Also include the next month in case event spans a boundary
-            months_needed.add(((end_dt + pd.DateOffset(months=1)).year,
-                                (end_dt + pd.DateOffset(months=1)).month))
-
-            da_months = []
-            for (yr_m, mo_m) in sorted(months_needed):
-                for suffix in ["", "_fixed_time"]:
-                    p = os.path.join(VAULT_DIR, "weather_data",
-                                     f"{yr_m}-{mo_m:02d}_HRRR_data{suffix}.zarr")
-                    if os.path.exists(p):
-                        ds_h = xr.open_zarr(p, consolidated=False)
-                        ds_h = ds_h.isel(y=slice(row_min_h, row_max_h+1),
-                                         x=slice(col_min_h, col_max_h+1))
-                        if "forecast_hour" in ds_h.coords:
-                            ds_h = ds_h.where(ds_h.forecast_hour == 1, drop=True)
-                        elif "step" in ds_h.coords:
-                            if np.issubdtype(ds_h.step.dtype, np.timedelta64):
-                                ds_h = ds_h.where(ds_h.step == np.timedelta64(1, "h"), drop=True)
-                            else:
-                                ds_h = ds_h.where(ds_h.step == 1, drop=True)
-                        ds_h = ds_h.sortby('time').drop_duplicates('time')
-                        v_h = 'APCP_sfc' if 'APCP_sfc' in ds_h.data_vars else 'tp'
-                        da_d = ds_h[v_h].resample(time='1D').sum().compute()
-                        da_d = da_d.drop_vars(['latitude', 'longitude'], errors='ignore')
-                        da_months.append(da_d)
-                        ds_h.close()
-                        break   # prefer non-fixed unless only fixed exists
-
-            if da_months:
-                da_all = xr.concat(da_months, dim='time').sortby('time').drop_duplicates('time')
-                da = da_all.sel(time=slice(start, end)).sum(dim='time')
-                da = da.assign_coords(lat=(('y', 'x'), hrrr_lat_c),
-                                      lon=(('y', 'x'), hrrr_lon_c))
-                grids['HRRR'] = da
-                print("    HRRR OK")
-        except Exception as e:
-            print(f"    [WARN] HRRR: {e}")
-    else:
-        print("    HRRR skipped (pre-2014 event or no grid)")
-
     return grids
 
 
@@ -466,26 +398,25 @@ def main():
     event_regridded_grids = {}
     event_snotel_data = {}
 
-    for event in AR_EVENTS:
+    for event in NON_AR_EVENTS:
         start = event["start"]
         end = event["end"]
         print(f"\nProcessing: {event['label']}")
         grids = load_event_grids(event)
 
         # Load SNOTEL data
-        zarr_path = os.path.join(DATA_DIR, "weather_data", f"{start}_{end}_SNOTEL_daily_data.zarr")
+        zarr_path = os.path.join(SNOTEL_DIR, f"{start}_{end}_SNOTEL_daily_data.zarr")
         if not os.path.exists(zarr_path):
             print(f"  Downloading SNOTEL daily data for {start} to {end}...")
-            import sys
             try:
                 subprocess.run([
                     sys.executable,
-                    os.path.join(BASE_DIR, "scripts/snotel_downloader_hernan.py"),
+                    str(SNOTEL_DOWNLOADER),
                     "--startDate", start,
                     "--endDate", end,
-                    "--geojson", os.path.join(BASE_DIR, "data/GIS/SkagitBoundary.json"),
+                    "--geojson", str(BOUNDARY_PATH),
                     "--frequency", "daily",
-                    "--outputDir", os.path.join(BASE_DIR, "data/")
+                    "--outputDir", str(SNOTEL_DIR)
                 ], check=True)
             except subprocess.CalledProcessError:
                 print(f"  [WARN] SNOTEL download failed (metloom module may not be available)")
@@ -496,7 +427,7 @@ def main():
             snotel_lats = ds_snotel.lat.values
             snotel_lons = ds_snotel.lon.values
             snotel_cumulative_inches = ds_snotel.PRECIPITATION.sel(time=slice(start, end)).sum(dim='time').values
-            snotel_cumulative_mm = snotel_cumulative_inches * 25.4
+            snotel_cumulative_mm = snotel_cumulative_inches * MM_PER_INCH
 
             event_snotel_data[event['label']] = {
                 'lons': snotel_lons,
@@ -518,7 +449,7 @@ def main():
     # Compute PRISM values at SNOTEL station locations for bias calculation
     print("\nComputing PRISM values at SNOTEL stations...")
     event_snotel_prism = {}
-    for event in AR_EVENTS:
+    for event in NON_AR_EVENTS:
         elabel = event['label']
         snotel = event_snotel_data[elabel]
         if snotel is not None:
@@ -544,7 +475,7 @@ def main():
     # Compute SNOTEL bias (SNOTEL - PRISM)
     print("Computing SNOTEL station bias...")
     event_snotel_bias = {}
-    for event in AR_EVENTS:
+    for event in NON_AR_EVENTS:
         elabel = event['label']
         snotel = event_snotel_data[elabel]
         prism_at_stn = event_snotel_prism[elabel]
@@ -561,7 +492,6 @@ def main():
         event_bias_grids[elabel] = {}
         prism_grid = event_regridded_grids[elabel]['PRISM']
         prism_regridded_valid = ~np.isnan(prism_grid)
-        prism_source_coverage = event_regridded_grids[elabel].get('_prism_coverage')
 
         for prod in PRODUCTS:
             if prod != 'PRISM':
@@ -572,11 +502,9 @@ def main():
                     np.nan
                 )
                 bias[~mask_2d] = np.nan
-                if prism_source_coverage is not None:
-                    bias = np.where(prism_source_coverage, bias, np.nan)
                 event_bias_grids[elabel][prod] = bias
 
-    # Dynamic bias limits: 99.5th percentile of absolute bias
+    # Dynamic bias limits: BIAS_PERCENTILE (99.5th percentile) of absolute bias
     print("\nCalculating dynamic bias colorbar limits...")
     all_bias_arrays = []
     for elabel in event_bias_grids:
@@ -589,21 +517,13 @@ def main():
                         all_bias_arrays.append(np.abs(v))
     if all_bias_arrays:
         all_bias_vals = np.concatenate(all_bias_arrays)
-        vmax_bias = float(np.ceil(np.quantile(all_bias_vals, 0.995)))
+        vmax_bias = float(np.ceil(np.quantile(all_bias_vals, BIAS_PERCENTILE)))
     else:
         vmax_bias = 50.0
     vmin_bias = -vmax_bias
     print(f"Bias color range: {vmin_bias}–{vmax_bias} mm")
 
     # Plot grid: 6 rows × 5 columns (bias relative to PRISM)
-    # Publication font sizes (figure is ~15 in wide; expect ~0.45x reduction to journal page width)
-    FONT_SUPTITLE = 24
-    FONT_TITLE = 18       # column titles
-    FONT_ROW_LABEL = 18
-    FONT_CBAR_LABEL = 18
-    FONT_CBAR_TICK = 16
-    FONT_NA = 16
-
     plt.rcParams.update({
         'font.size': FONT_CBAR_LABEL,
         'font.family': 'sans-serif',
@@ -611,14 +531,14 @@ def main():
     })
 
     fig, axes = plt.subplots(
-        len(AR_EVENTS), len(BIAS_PRODUCTS),
-        figsize=(15, 17.5),
+        len(NON_AR_EVENTS), len(BIAS_PRODUCTS),
+        figsize=FIGSIZE,
         subplot_kw={"projection": ccrs.PlateCarree()},
         facecolor='#ffffff'
     )
 
     im = None
-    for row_idx, event in enumerate(AR_EVENTS):
+    for row_idx, event in enumerate(NON_AR_EVENTS):
         elabel = event['label']
         for col_idx, prod in enumerate(BIAS_PRODUCTS):
             ax = axes[row_idx, col_idx]
@@ -628,7 +548,7 @@ def main():
                 im = ax.pcolormesh(
                     ref_lon, ref_lat, grid,
                     transform=ccrs.PlateCarree(),
-                    cmap="RdBu_r", vmin=vmin_bias, vmax=vmax_bias,
+                    cmap=BIAS_CMAP, vmin=vmin_bias, vmax=vmax_bias,
                     shading='auto'
                 )
 
@@ -638,7 +558,7 @@ def main():
                 if snotel is not None and snotel_bias is not None:
                     ax.scatter(
                         snotel['lons'], snotel['lats'],
-                        c=snotel_bias, cmap="RdBu_r",
+                        c=snotel_bias, cmap=BIAS_CMAP,
                         vmin=vmin_bias, vmax=vmax_bias,
                         edgecolors="black", linewidths=1.2,
                         s=60, transform=ccrs.PlateCarree(),
@@ -681,13 +601,6 @@ def main():
 
     plt.subplots_adjust(left=0.08, right=0.98, top=0.88, bottom=0.10, wspace=0.05, hspace=0.08)
 
-    # # Overall title
-    # plt.suptitle(
-    #     "Spatial Distribution of Precipitation during Atmospheric River Events\n"
-    #     "Multi-Product Comparison (Cumulative Precipitation)",
-    #     fontsize=22, fontweight='bold', y=0.96
-    # )
-
     plt.suptitle(
         "Bias in Cumulative Precipitation during Non-Atmospheric River Events\n"
         "Multi-Product Comparison (Bias relative to PRISM)\n"
@@ -696,7 +609,7 @@ def main():
     )
 
     out_png = os.path.join(OUT_DIR, "non_ar_events_cumulative_spatial_bias_grid_8_days.png")
-    plt.savefig(out_png, dpi=300, bbox_inches='tight')
+    plt.savefig(out_png, dpi=DPI, bbox_inches='tight')
     plt.close()
     print(f"\nSaved combined comparison figure to: {out_png}")
 

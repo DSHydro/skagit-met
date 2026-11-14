@@ -4,7 +4,10 @@ For each event in ``SPECIFIC_DATES``, daily basin-mean precipitation over the
 Skagit Basin (Upper Skagit, Sauk and Lower Skagit HUC8 sub-basins) is
 extracted from six gridded products (PRISM, PNNL, Daymet, CONUS404, UCLA,
 GridMET) for a 9-day window (T-3 to T+5) or a custom date range, and the
-cumulative totals are plotted in a 3x2 panel figure. Each panel title gives
+cumulative totals are plotted in a 3x2 panel figure. The cumulative mean
+daily precipitation of the SNOTEL stations inside the basin is overlaid as a
+dashed black line (station mean, not a gridded basin mean; SNOTEL zarrs are
+downloaded on demand with downloaders/snotel_downloader.py). Each panel title gives
 the event's AR scale and the peak USGS 12200500 discharge in the window. All
 panels share the same y-axis range.
 
@@ -27,6 +30,8 @@ Usage
 """
 
 import os
+import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -60,10 +65,17 @@ UCLA_STATIC = os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_c
 GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")  # <year>_daily_4km_gridMET_data.zarr
 GRIDMET_SAMPLE = os.path.join(GRIDMET_DIR, "2021_daily_4km_gridMET_data.zarr")  # used only for its grid
 
+# SNOTEL station data: <start>_<end>_SNOTEL_daily_data.zarr, downloaded on demand
+SNOTEL_DIR = BASE_DIR / "data" / "weather_data"
+SNOTEL_DOWNLOADER = BASE_DIR / "downloaders" / "snotel_downloader.py"
+SNOTEL_GEOJSON = BASE_DIR / "data" / "GIS" / "SkagitBoundary.json"
+INCH_TO_MM = 25.4
+
 # Products, in plotting order, with their line colors and markers
-PRODUCTS = ['prism', 'pnnl', 'daymet', 'conus', 'ucla', 'gridmet']
-PRODUCT_COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
-PRODUCT_MARKERS = ['o', 's', '^', 'D', 'v', 'p']
+PRODUCTS = ['prism', 'pnnl', 'daymet', 'conus', 'ucla', 'gridmet', 'snotel']
+PRODUCT_COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#000000']
+PRODUCT_MARKERS = ['o', 's', '^', 'D', 'v', 'p', '*']
+PRODUCT_LINESTYLES = ['-', '-', '-', '-', '-', '-', '--']
 PNNL_LAST_YEAR = 2020  # PNNL historical run ends in 2020
 
 # Default event window: T-3 to T+5 days
@@ -81,7 +93,7 @@ FONT_SUPTITLE = 22
 FONT_TITLE = 16
 FONT_LABEL = 16
 FONT_TICK = 14
-FONT_LEGEND = 13
+FONT_LEGEND = 16
 
 # Specific event dates to plot
 # Can be a string date or a dict with 'event_date', 'start_date', 'end_date' for custom ranges
@@ -198,6 +210,48 @@ def calculate_basin_mean(da, mask_2d):
         return mean_val
     else:
         raise ValueError(f"Unexpected data dimensions: {data.ndim}")
+
+
+def load_snotel_daily_mean(window_dates):
+    """Daily precipitation (mm) averaged over the SNOTEL stations in the basin.
+
+    Reads <start>_<end>_SNOTEL_daily_data.zarr from SNOTEL_DIR, downloading it
+    with the SNOTEL downloader if missing. Returns (series indexed by date,
+    number of stations), or (None, 0) if the data are unavailable.
+    """
+    start = window_dates[0].strftime('%Y-%m-%d')
+    end = window_dates[-1].strftime('%Y-%m-%d')
+    zarr_path = SNOTEL_DIR / f"{start}_{end}_SNOTEL_daily_data.zarr"
+
+    if not zarr_path.exists():
+        print(f"  Downloading SNOTEL daily data for {start} to {end}...")
+        try:
+            subprocess.run([
+                sys.executable, str(SNOTEL_DOWNLOADER),
+                "--startDate", start,
+                "--endDate", end,
+                "--geojson", str(SNOTEL_GEOJSON),
+                "--frequency", "daily",
+                "--outputDir", str(SNOTEL_DIR),
+            ], check=True)
+        except subprocess.CalledProcessError:
+            print("  [WARN] SNOTEL download failed")
+            return None, 0
+
+    try:
+        ds = xr.open_zarr(zarr_path)
+        precip_mm = ds['PRECIPITATION'].sel(time=slice(start, end)).load() * INCH_TO_MM
+        ds.close()
+    except Exception as e:
+        print(f"  [WARN] SNOTEL loading failed: {e}")
+        return None, 0
+
+    precip_mm = precip_mm.where(precip_mm >= 0)
+    n_stations = int(precip_mm.notnull().any(dim='time').sum())
+    daily_mean = precip_mm.mean(dim='site', skipna=True).to_series()
+    daily_mean.index = pd.to_datetime(daily_mean.index).normalize()
+    print(f"  ✓ SNOTEL: {n_stations} stations")
+    return daily_mean, n_stations
 
 
 def get_decade_folder(year: int) -> str:
@@ -424,7 +478,19 @@ def extract_event_window(event_date, products_to_extract=PRODUCTS, start_date=No
         except Exception as e:
             print(f"Error loading GridMET for {event_date.strftime('%Y-%m-%d')}: {e}")
 
-    return pd.DataFrame(results).T
+    # Extract SNOTEL (mean of the stations inside the basin, not a gridded basin mean)
+    n_snotel = 0
+    if 'snotel' in products_to_extract:
+        snotel_daily, n_snotel = load_snotel_daily_mean(window_dates)
+        if snotel_daily is not None:
+            for date in window_dates:
+                normalized_date = date.normalize()
+                if normalized_date in snotel_daily.index and not np.isnan(snotel_daily[normalized_date]):
+                    results[f'{date.strftime("%Y-%m-%d")}']['snotel'] = float(snotel_daily[normalized_date])
+
+    df = pd.DataFrame(results).T
+    df.attrs['n_snotel'] = n_snotel
+    return df
 
 
 def save_timeseries_to_csv(all_event_data, output_dir):
@@ -520,6 +586,7 @@ def plot_specific_ar_events():
                 cumsum = event_data[product].cumsum()
                 ax.plot(cumsum.index, cumsum, label=product.upper(),
                        marker=PRODUCT_MARKERS[prod_idx], linewidth=2, markersize=5,
+                       linestyle=PRODUCT_LINESTYLES[prod_idx],
                        color=PRODUCT_COLORS[prod_idx], alpha=0.8)
 
         ar_label = f'(AR = {ar_scale} | Discharge = {discharge_cms:.0f} cms)' if ar_scale is not None else ''
@@ -529,13 +596,26 @@ def plot_specific_ar_events():
         if idx % 2 == 0:
             ax.set_ylabel('Cumulative\nPrecipitation (mm)', fontsize=FONT_LABEL)
         ax.set_ylim(0, ylim_max)
-        ax.legend(loc='upper left', fontsize=FONT_LEGEND, ncol=2)
+        # Number of SNOTEL stations varies by event, so it is noted per panel
+        if 'snotel' in event_data.columns:
+            ax.text(0.02, 0.96, f"SNOTEL n = {event_data.attrs.get('n_snotel', 0)}",
+                    transform=ax.transAxes, ha='left', va='top', fontsize=FONT_LEGEND)
         ax.grid(True, alpha=0.3)
         ax.tick_params(axis='both', labelsize=FONT_TICK)
         ax.tick_params(axis='x', rotation=45)
 
     plt.suptitle('Cumulative Precipitation during Top Discharge AR Events', fontsize=FONT_SUPTITLE, fontweight='bold')
     plt.tight_layout(h_pad=2.0)
+
+    # Single shared legend below the panels (collected from all panels, since
+    # some products are missing for some events, e.g. PNNL after 2020)
+    legend_entries = {}
+    for ax in axes:
+        for handle, label in zip(*ax.get_legend_handles_labels()):
+            legend_entries.setdefault(label, handle)
+    fig.legend(legend_entries.values(), legend_entries.keys(), loc='upper center',
+               bbox_to_anchor=(0.5, 0.0), ncol=len(legend_entries), fontsize=FONT_LEGEND,
+               frameon=False)
 
     output_path = os.path.join(OUTPUT_DIR, 'specific_ar_events_cumulative_precipitation.png')
     plt.savefig(output_path, dpi=DPI, bbox_inches='tight')

@@ -1,22 +1,32 @@
-"""
-Publication figure: 3x1 panel of water-year cumulative precipitation.
+"""Publication figure: 3x1 panel of water-year precipitation totals.
 
-Panels (top to bottom):
+Water-year precipitation total of six products (PRISM, PNNL, Daymet,
+CONUS404, UCLA, GridMET) against water year, one panel per sub-basin
+(shared x and y axes, one legend below the panels):
+
   (a) Lower Skagit
   (b) Upper Skagit
   (c) Sauk
 
-Reads the same CSV as plot_water_year_cumulative_data.py
-(run create_water_year_cumulative_csv.py first if it is missing).
+Input
+    plots/precipitation_long_term_means/water_year_cumulative_precipitation.csv
+        (written by water_year_cumulative.py; run it first if the CSV is missing)
+Output
+    plots/precipitation_long_term_means/water_year_cumulative_precipitation_panel.png
+
+Usage
+    python plot_water_year_cumulative_panel.py
 """
 
 import os
-import pandas as pd
-import matplotlib.pyplot as plt
+from pathlib import Path
 
-# Configuration
-OUTPUT_DIR = "/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication/plots/precipitation_long_term_means"
-CSV_PATH = os.path.join(OUTPUT_DIR, 'water_year_cumulative_precipitation.csv')
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Paths: input CSV and figure live next to this script
+OUTPUT_DIR = Path(__file__).resolve().parent
+CSV_PATH = OUTPUT_DIR / 'water_year_cumulative_precipitation.csv'
 OUTPUT_NAME = 'water_year_cumulative_precipitation_panel'
 
 GEOMETRIES = ['Lower Skagit', 'Upper Skagit', 'Sauk']
@@ -26,6 +36,7 @@ COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
 # Figure size in inches: ~7 in = full-page width for most journals
 FIG_WIDTH = 7.0
 FIG_HEIGHT = 8.0
+TICK_STEP = 5  # x-axis tick every 5 water years
 
 # Font sizes suited to a printed figure at FIG_WIDTH
 plt.rcParams.update({
@@ -47,7 +58,7 @@ def plot_water_year_cumulative_panel():
 
     if not os.path.exists(CSV_PATH):
         print(f"Error: CSV file not found at {CSV_PATH}")
-        print("Please run create_water_year_cumulative_csv.py first to generate the data.")
+        print("Please run water_year_cumulative.py first to generate the data.")
         return
 
     df = pd.read_csv(CSV_PATH, index_col='WaterYear').sort_index()
@@ -76,9 +87,8 @@ def plot_water_year_cumulative_panel():
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.6)
         ax.set_xlim(water_years[0], water_years[-1])
 
-    # Shared x-axis
-    step = 5
-    ticks = [y for y in water_years if y % step == 0]
+    # Shared x-axis, a tick every TICK_STEP water years
+    ticks = [y for y in water_years if y % TICK_STEP == 0]
     axes[-1].set_xticks(ticks)
     axes[-1].set_xlabel('Water Year')
 

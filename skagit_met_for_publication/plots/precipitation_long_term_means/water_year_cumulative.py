@@ -1,30 +1,69 @@
-"""
-Create CSV of cumulative precipitation by water year.
+"""Total precipitation per water year for six products and four basin areas (CSV).
 
-This module aggregates daily precipitation data from multiple weather products
-(PRISM, PNNL, Daymet, CONUS404, UCLA, GridMET) over the Skagit Basin for
-water years 1983-2020 (Oct 1 - Sep 30) and exports the data to CSV.
+For every water year from 1983 to 2020 (WY N = 1 Oct of year N-1 to 30 Sep of
+year N), daily basin-mean precipitation is extracted from six gridded
+products (PRISM, PNNL, Daymet, CONUS404, UCLA, GridMET) and summed over the
+water year. This is done separately for the Upper Skagit, Sauk and Lower
+Skagit HUC8 sub-basins and for the three combined ("All"). The result is one
+row per water year with one column per <area>_<PRODUCT> pair.
+
+This CSV is the input of plot_water_year_cumulative_data.py and
+plot_water_year_cumulative_panel.py.
 
 Main functions:
   extract_water_year_data: Extract daily precipitation for a specific water year
   create_water_year_cumulative_csv: Generate and save CSV with cumulative precipitation
+
+Input
+    /data0/skagit_met/data_transfer/data/...      (gridded precipitation products)
+    data/GIS/SkagitSubBasin_HUC8.geojson
+    data/weather_data/conus404_skagit_precip_daily_full.zarr
+Output
+    plots/precipitation_long_term_means/water_year_cumulative_precipitation.csv
+
+Usage
+    python water_year_cumulative.py      (slow: reads every day of 38 water years, 4 times)
 """
 
 import os
-import pandas as pd
-import xarray as xr
-import numpy as np
-import geopandas as gpd
-import regionmask
-import zipfile
 import tempfile
-import rioxarray
+import zipfile
+from pathlib import Path
 
-# Configuration
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import regionmask
+import rioxarray
+import xarray as xr
+
+# Shared raw-data archive (outside this repository)
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication"
-HUC8_GEO = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
-OUTPUT_DIR = os.path.join("/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication/plots/precipitation_long_term_means")
+
+# Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
+BASE_DIR = Path(__file__).resolve().parents[2]
+HUC8_GEO = BASE_DIR / "data" / "GIS" / "SkagitSubBasin_HUC8.geojson"
+OUTPUT_DIR = Path(__file__).resolve().parent
+
+# Precipitation product locations
+PRISM_DIR = os.path.join(VAULT_DIR, "prism_new_hq")  # daily TIFF zips, by decade folder
+DAYMET_DIR = os.path.join(VAULT_DIR, "daymet_new_hq")  # prcp_<year>_subset.nc
+PNNL_DIR = os.path.join(VAULT_DIR, "PNNL/historical")  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
+PNNL_GEO = os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc")  # PNNL grid coordinates
+CONUS_ZARR = BASE_DIR / "data" / "weather_data" / "conus404_skagit_precip_daily_full.zarr"
+UCLA_PREC_DIR = os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec")  # prec.daily.era5.d02.<year>.nc
+UCLA_STATIC = os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc")  # UCLA grid coordinates
+GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")  # <year>_daily_4km_gridMET_data.zarr
+GRIDMET_SAMPLE = os.path.join(GRIDMET_DIR, "2021_daily_4km_gridMET_data.zarr")  # used only for its grid
+
+PRODUCTS = ['prism', 'pnnl', 'daymet', 'conus', 'ucla', 'gridmet']
+PNNL_LAST_YEAR = 2020  # PNNL historical run ends in 2020
+
+# Sub-basins (HUC8 names) in mask order, and the areas written to the CSV ('All' = the three combined)
+SUBBASINS = ["Upper Skagit", "Sauk", "Lower Skagit"]
+GEOMETRIES = SUBBASINS + ['All']
+
+OUTPUT_CSV_NAME = 'water_year_cumulative_precipitation.csv'
 
 # Water years to process (water year is Oct 1 - Sep 30)
 # Water year 1983 = Oct 1, 1982 to Sep 30, 1983
@@ -52,7 +91,7 @@ def load_prism_from_new_format(date, prism_root):
                             filepath = os.path.join(root, f)
                             da = rioxarray.open_rasterio(filepath)
                             return da.squeeze().copy(deep=True)
-    except Exception as e:
+    except Exception:
         pass
 
     return None
@@ -60,7 +99,7 @@ def load_prism_from_new_format(date, prism_root):
 
 def load_daymet_from_netcdf(year):
     """Load Daymet data from netCDF file for a specific year"""
-    daymet_nc_path = os.path.join(VAULT_DIR, "daymet_new_hq", f"prcp_{year}_subset.nc")
+    daymet_nc_path = os.path.join(DAYMET_DIR, f"prcp_{year}_subset.nc")
 
     if not os.path.exists(daymet_nc_path):
         return None
@@ -78,24 +117,17 @@ def load_regions():
     return gdf
 
 
-def get_mask(gdf, lon, lat, region_name=None):
-    """Get mask for specific region or all three subbasins.
-    If region_name is None, returns a mask with separate region dimension for each subbasin."""
+def get_mask(gdf, lon, lat):
+    """Get the mask of the three sub-basins, with one entry per sub-basin along 'region'."""
     mask = regionmask.mask_3D_geopandas(gdf, lon, lat)
-    region_names = ["Upper Skagit", "Sauk", "Lower Skagit"]
     region_indices = []
-    for r in region_names:
+    for r in SUBBASINS:
         try:
             idx = gdf[gdf["Name"].str.contains(r, case=False)].index[0]
             region_indices.append(idx)
-        except:
+        except Exception:
             pass
-
-    if region_name is None:
-        return mask.sel(region=region_indices)
-    else:
-        idx = gdf[gdf["Name"].str.contains(region_name, case=False)].index[0]
-        return mask.sel(region=[idx])
+    return mask.sel(region=region_indices)
 
 
 def calculate_basin_mean(da, mask_2d, region_idx=None):
@@ -161,8 +193,12 @@ def get_water_year_dates(water_year):
     return pd.date_range(start_date, end_date, freq='D').tolist()
 
 
-def extract_water_year_data(water_year, products_to_extract=['prism', 'pnnl', 'daymet', 'conus', 'ucla', 'gridmet'], geometry=None):
-    """Extract daily precipitation for a complete water year across all products."""
+def extract_water_year_data(water_year, products_to_extract=PRODUCTS, geometry=None):
+    """Extract daily basin-mean precipitation for a complete water year across all products.
+
+    ``geometry`` is one of SUBBASINS, or None/'All' for the three combined.
+    Returns a DataFrame indexed by date string with one column per product.
+    """
 
     window_dates = get_water_year_dates(water_year)
     results = {f'{date.strftime("%Y-%m-%d")}': {} for date in window_dates}
@@ -170,58 +206,50 @@ def extract_water_year_data(water_year, products_to_extract=['prism', 'pnnl', 'd
     gdf = load_regions()
     masks_2d = {}
 
-    # Determine which region index to use (None = all, 0 = Upper Skagit, 1 = Sauk, 2 = Lower Skagit)
+    # Which sub-basin to use (None = all combined, 0 = Upper Skagit, 1 = Sauk, 2 = Lower Skagit)
     region_idx = None
     if geometry and geometry.lower() != 'all':
-        region_map = {'upper skagit': 0, 'sauk': 1, 'lower skagit': 2}
+        region_map = {name.lower(): i for i, name in enumerate(SUBBASINS)}
         region_idx = region_map.get(geometry.lower())
 
-    # Load masks for each product - preserve region dimension if extracting specific region
+    # Basin masks on each product's grid - keep the region dimension if extracting one sub-basin.
+    # PRISM and Daymet masks are built later from the coordinates of the data actually loaded.
     try:
-        sample_prism = xr.open_zarr(os.path.join(VAULT_DIR, "PRISM/1991-2000/1996-01-01_1996-12-31_daily_4km_PRISM_data.zarr"), consolidated=False)
-        mask = get_mask(gdf, sample_prism.lon, sample_prism.lat)
-        masks_2d['PRISM'] = mask if region_idx is not None else mask.any(dim='region')
-        sample_prism.close()
-    except:
-        pass
-
-    try:
-        sample_geo = xr.open_dataset(os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc"))
+        sample_geo = xr.open_dataset(PNNL_GEO)
         mask = get_mask(gdf, sample_geo.XLONG_M.values[0], sample_geo.XLAT_M.values[0])
         masks_2d['PNNL'] = mask if region_idx is not None else mask.any(dim='region')
     except Exception as e:
         print(f"  Warning: Could not load PNNL mask: {e}")
 
     try:
-        sample_conus = xr.open_zarr(os.path.join(BASE_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr"))
+        sample_conus = xr.open_zarr(CONUS_ZARR)
         mask = get_mask(gdf, sample_conus.lon, sample_conus.lat)
         masks_2d['CONUS404'] = mask if region_idx is not None else mask.any(dim='region')
         sample_conus.close()
-    except:
+    except Exception:
         pass
 
     try:
-        ucla_static = xr.open_dataset(os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc"))
+        ucla_static = xr.open_dataset(UCLA_STATIC)
         mask = get_mask(gdf, ucla_static.lon2d.values, ucla_static.lat2d.values)
         masks_2d['UCLA'] = mask if region_idx is not None else mask.any(dim='region')
     except Exception as e:
         print(f"  Warning: Could not load UCLA mask: {e}")
 
     try:
-        sample_gridmet = xr.open_zarr(os.path.join(VAULT_DIR, "gridmet/2021_daily_4km_gridMET_data.zarr"))
+        sample_gridmet = xr.open_zarr(GRIDMET_SAMPLE)
         mask = get_mask(gdf, sample_gridmet.lon, sample_gridmet.lat)
         masks_2d['GridMET'] = mask if region_idx is not None else mask.any(dim='region')
-    except:
+    except Exception:
         pass
 
     # Extract PRISM from new format (TIFF)
     if 'prism' in products_to_extract:
-        prism_root = os.path.join(VAULT_DIR, "prism_new_hq")
         prism_data = {}
 
         for date in window_dates:
             try:
-                da = load_prism_from_new_format(date, prism_root)
+                da = load_prism_from_new_format(date, PRISM_DIR)
                 if da is None:
                     continue
                 lon = da.x.values
@@ -229,7 +257,7 @@ def extract_water_year_data(water_year, products_to_extract=['prism', 'pnnl', 'd
                 m_prism = get_mask(gdf, lon, lat)
                 mean_val = calculate_basin_mean(da, m_prism, region_idx=region_idx)
                 prism_data[date.normalize()] = mean_val
-            except Exception as date_error:
+            except Exception:
                 pass
 
         for date in window_dates:
@@ -241,12 +269,11 @@ def extract_water_year_data(water_year, products_to_extract=['prism', 'pnnl', 'd
         if prism_count > 0:
             print(f"    PRISM: {prism_count}/{len(window_dates)} dates extracted")
 
-    # Extract PNNL
-    if 'pnnl' in products_to_extract and water_year <= 2020:
+    # Extract PNNL (hourly, summed to daily; a water year spans two calendar-year files)
+    if 'pnnl' in products_to_extract and water_year <= PNNL_LAST_YEAR:
         try:
-            pnnl_daily_all = {}
             for cal_year in [water_year - 1, water_year]:
-                pnnl_path = os.path.join(VAULT_DIR, "PNNL/historical", str(cal_year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{cal_year}.nc")
+                pnnl_path = os.path.join(PNNL_DIR, str(cal_year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{cal_year}.nc")
                 if os.path.exists(pnnl_path):
                     try:
                         ds = xr.open_dataset(pnnl_path)
@@ -264,7 +291,6 @@ def extract_water_year_data(water_year, products_to_extract=['prism', 'pnnl', 'd
                                 if normalized_date in pnnl_daily.index:
                                     val = pnnl_daily[normalized_date]
                                     results[f'{date.strftime("%Y-%m-%d")}']['pnnl'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
-                                    pnnl_daily_all[normalized_date] = True
                         ds.close()
                     except Exception as e:
                         print(f"  PNNL Error for {cal_year}: {e}")
@@ -302,15 +328,14 @@ def extract_water_year_data(water_year, products_to_extract=['prism', 'pnnl', 'd
                                 val = daymet_daily[normalized_date]
                                 results[f'{date.strftime("%Y-%m-%d")}']['daymet'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
                     ds.close()
-        except Exception as e:
+        except Exception:
             pass
 
     # Extract CONUS404
     if 'conus' in products_to_extract:
         try:
-            conus_path = os.path.join(BASE_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr")
-            if os.path.exists(conus_path):
-                ds = xr.open_zarr(conus_path)
+            if os.path.exists(CONUS_ZARR):
+                ds = xr.open_zarr(CONUS_ZARR)
                 ds['time'] = pd.to_datetime(ds.time.values).normalize()
                 da = ds['precip_daily'].sel(time=window_dates, method='nearest')
                 if 'CONUS404' in masks_2d:
@@ -323,7 +348,7 @@ def extract_water_year_data(water_year, products_to_extract=['prism', 'pnnl', 'd
                             val = conus_daily[normalized_date]
                             results[f'{date.strftime("%Y-%m-%d")}']['conus'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
                 ds.close()
-        except Exception as e:
+        except Exception:
             pass
 
     # Extract UCLA
@@ -331,7 +356,7 @@ def extract_water_year_data(water_year, products_to_extract=['prism', 'pnnl', 'd
         try:
             series_list = []
             for cal_year in [water_year - 1, water_year]:
-                u_path = os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec", f"prec.daily.era5.d02.{cal_year}.nc")
+                u_path = os.path.join(UCLA_PREC_DIR, f"prec.daily.era5.d02.{cal_year}.nc")
                 if os.path.exists(u_path):
                     try:
                         ds = xr.open_dataset(u_path)
@@ -367,7 +392,7 @@ def extract_water_year_data(water_year, products_to_extract=['prism', 'pnnl', 'd
     if 'gridmet' in products_to_extract:
         try:
             for cal_year in [water_year - 1, water_year]:
-                gridmet_path = os.path.join(VAULT_DIR, f"gridmet/{cal_year}_daily_4km_gridMET_data.zarr")
+                gridmet_path = os.path.join(GRIDMET_DIR, f"{cal_year}_daily_4km_gridMET_data.zarr")
                 if os.path.exists(gridmet_path):
                     ds = xr.open_zarr(gridmet_path)
                     if 'day' in ds.dims:
@@ -388,7 +413,7 @@ def extract_water_year_data(water_year, products_to_extract=['prism', 'pnnl', 'd
                                     val = gridmet_daily[normalized_date]
                                     results[f'{date.strftime("%Y-%m-%d")}']['gridmet'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
                     ds.close()
-        except Exception as e:
+        except Exception:
             pass
 
     return pd.DataFrame(results).T
@@ -398,36 +423,26 @@ def create_water_year_cumulative_csv():
     """Extract and save cumulative precipitation data to CSV for each geometry."""
     print(f"Extracting water year data from {WATER_YEAR_START} to {WATER_YEAR_END}...")
 
-    products = ['prism', 'pnnl', 'daymet', 'conus', 'ucla', 'gridmet']
-    geometries = ['Upper Skagit', 'Sauk', 'Lower Skagit', 'All']
-    water_years = sorted(range(WATER_YEAR_START, WATER_YEAR_END + 1))
+    products = PRODUCTS
+    water_years = range(WATER_YEAR_START, WATER_YEAR_END + 1)
 
-    # Dictionary to store all data for CSV
+    # Water-year totals, {water_year: {"<area>_<PRODUCT>": total}}
     csv_data = {wy: {} for wy in water_years}
 
-    for geometry in geometries:
-        # Dictionary to store cumulative precipitation per water year per product
-        wy_totals = {product: {} for product in products}
-
-        # Extract data for each water year for this geometry
-        geom_label = geometry if geometry == 'All' else geometry
+    for geometry in GEOMETRIES:
         for wy in water_years:
-            print(f"  Extracting water year {wy} for {geom_label}...")
+            print(f"  Extracting water year {wy} for {geometry}...")
             wy_data = extract_water_year_data(wy, products_to_extract=products, geometry=geometry)
 
-            # Calculate total cumulative for each product
+            # Total over the water year for each product
             for product in products:
                 if product in wy_data.columns:
                     total = wy_data[product].sum()
                     if not np.isnan(total):
-                        wy_totals[product][wy] = total
-                        # Store in CSV data dict
-                        csv_key = f"{geom_label}_{product.upper()}"
-                        if csv_key not in csv_data[wy]:
-                            csv_data[wy][csv_key] = total
+                        csv_data[wy][f"{geometry}_{product.upper()}"] = total
 
     # Export to CSV
-    csv_path = os.path.join(OUTPUT_DIR, 'water_year_cumulative_precipitation.csv')
+    csv_path = os.path.join(OUTPUT_DIR, OUTPUT_CSV_NAME)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     csv_df = pd.DataFrame(csv_data).T
     csv_df.index.name = 'WaterYear'

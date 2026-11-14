@@ -1,53 +1,102 @@
-"""Generate spatial maps of precipitation percentiles and biases for Skagit Basin.
+"""Spatial maps of extreme daily precipitation percentiles (P95, P99) and their bias.
 
-Extracts daily precipitation percentiles (P95, P99) from multiple weather datasets
-(PRISM, Daymet, PNNL, CONUS404, UCLA, GridMET) for years 1981–2019. Regrids all
-products to a common PRISM 4km reference grid, computes multi-year averages, and
-calculates biases relative to PRISM baseline. Generates two publication-quality
-maps: one showing raw percentile values for each product, and one showing
-product-minus-PRISM biases.
+For each calendar year 1981-2019 and each product (PRISM, Daymet, PNNL,
+CONUS404, UCLA, GridMET), the 95th and 99th percentiles of daily
+precipitation are computed at every grid cell on the product's native grid.
+The yearly percentile maps are averaged over all years, regridded (linear) to
+the PRISM 4 km grid and masked to the Skagit watershed. Two figures are made:
 
-Outputs two high-resolution PNG figures to spatial_plots/plots/plot_spatial_percentiles/
+    1. Percentile maps of every product (rows: P95, P99; columns: products).
+    2. Bias maps relative to PRISM (product - PRISM). The colour ranges are
+       set by the 99.5th percentile of all mapped values.
+
+The yearly extraction is slow (39 years, run in parallel), so its result is
+cached in plots/percentiles_cache.pkl and reused on later runs. Delete the
+cache to re-extract (e.g. after changing YEARS, PERCENTILES or the data).
+
+Input
+    /data0/skagit_met/data_transfer/data/...   (gridded products, outside this repository)
+    data/weather_data/conus404_skagit_precip_daily_full.zarr
+    data/GIS/SkagitBoundary.json, data/GIS/SkagitSubBasin_HUC8.geojson
+Output
+    plots/spatial_bias_distribution/plots/spatial_percentiles_products.png
+    plots/spatial_bias_distribution/plots/spatial_percentiles_biases.png
+    plots/spatial_bias_distribution/plots/percentiles_cache.pkl   (cache)
+
+Usage
+    python plot_spatial_percentiles.py
 """
 
 import os
-import numpy as np
-import xarray as xr
-import pandas as pd
-import geopandas as gpd
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
+import pickle
+import tempfile
+import warnings
+import zipfile
+from pathlib import Path
+
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-import warnings
-from scipy.interpolate import griddata
-from joblib import Parallel, delayed
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import rioxarray
-import tempfile
-import zipfile
+import xarray as xr
+from joblib import Parallel, delayed
+from scipy.interpolate import griddata
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
 # --- Configuration & Paths ---
-BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication"
+# Shared raw-data archive (outside this repository)
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-BOUNDARY_PATH = os.path.join(BASE_DIR, "data/GIS/SkagitBoundary.json")
-SUBBASIN_PATH = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
-OUT_DIR = os.path.join(BASE_DIR, "plots/spatial_bias_distribution/plots")
+PRISM_ROOT = os.path.join(VAULT_DIR, "prism_new_hq")
+DAYMET_ROOT = os.path.join(VAULT_DIR, "daymet_new_hq")
+PNNL_GEO = os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc")  # PNNL grid coordinates
+PNNL_DIR = os.path.join(VAULT_DIR, "PNNL/historical")  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
+UCLA_STATIC = os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc")  # UCLA grid coordinates
+UCLA_PREC_DIR = os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec")  # prec.daily.era5.d02.<year>.nc
+GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")  # <year>_daily_4km_gridMET_data.zarr
 
-# Output image paths
-OUT_PRODUCTS_IMG = os.path.join(OUT_DIR, "spatial_percentiles_products.png")
-OUT_BIASES_IMG = os.path.join(OUT_DIR, "spatial_percentiles_biases.png")
+# Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
+BASE_DIR = Path(__file__).resolve().parents[2]
+CONUS_ZARR = BASE_DIR / "data" / "weather_data" / "conus404_skagit_precip_daily_full.zarr"
+BOUNDARY_PATH = BASE_DIR / "data" / "GIS" / "SkagitBoundary.json"
+SUBBASIN_PATH = BASE_DIR / "data" / "GIS" / "SkagitSubBasin_HUC8.geojson"
+OUT_DIR = Path(__file__).resolve().parent / "plots"
 
-# Percentile levels for daily precipitation
-PERCENTILES = {
+# Output paths
+OUT_PRODUCTS_IMG = OUT_DIR / "spatial_percentiles_products.png"
+OUT_BIASES_IMG = OUT_DIR / "spatial_percentiles_biases.png"
+CACHE_PATH = OUT_DIR / "percentiles_cache.pkl"
+
+# Analysis settings
+YEARS = range(1981, 2020)  # calendar years 1981-2019
+N_JOBS = 12  # years processed in parallel when (re)building the cache
+PERCENTILES = {  # percentile levels of daily precipitation
     "P95": 0.95,
     "P99": 0.99
 }
+PRODUCTS = ['PRISM', 'Daymet', 'PNNL', 'CONUS404', 'UCLA', 'GridMET']
+BIAS_PRODUCTS = [p for p in PRODUCTS if p != 'PRISM']
 
-PRISM_ROOT = os.path.join(VAULT_DIR, "prism_new_hq")
-DAYMET_ROOT = os.path.join(VAULT_DIR, "daymet_new_hq")
+# Crop box around the Skagit basin (lon_min, lon_max, lat_min, lat_max) and map extent
+BB = (-122.5, -120.5, 47.8, 49.5)
+MAP_EXTENT = [-122.35, -120.65, 47.90, 49.35]
+COLOR_LIMIT_PERCENTILE = 99.5  # colour range = this percentile of all mapped values
+
+# Figure settings. Publication font sizes (figures are 16-18 in wide; expect ~0.4x reduction to journal page width)
+FIGSIZE_PRODUCTS = (18, 8)
+FIGSIZE_BIASES = (16, 8)
+DPI = 300
+CMAP_PRECIP = "Greens"
+CMAP_BIAS = "RdBu_r"
+FONT_SUPTITLE = 24
+FONT_TITLE = 18       # column titles
+FONT_ROW_LABEL = 20
+FONT_CBAR_LABEL = 18
+FONT_CBAR_TICK = 16
 
 def get_decade_folder(year: int) -> str:
     if 2021 <= year <= 2024:
@@ -115,48 +164,22 @@ else:
     raise FileNotFoundError(f"Could not find PRISM data for reference date {prism_sample_date.date()}")
 
 # PNNL (still needed for loading PNNL data)
-ds_pnnl_static = xr.open_dataset(os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc"))
+ds_pnnl_static = xr.open_dataset(PNNL_GEO)
 pnnl_lon = ds_pnnl_static.XLONG_M.values[0]
 pnnl_lat = ds_pnnl_static.XLAT_M.values[0]
 ds_pnnl_static.close()
 
 # UCLA
-ds_ucla_static = xr.open_dataset(os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc"))
+ds_ucla_static = xr.open_dataset(UCLA_STATIC)
 ucla_lon = ds_ucla_static.lon2d.values
 ucla_lat = ds_ucla_static.lat2d.values
 ds_ucla_static.close()
 
-# # HRRR (commented out - not plotting)
-# hrrr_lon = None
-# hrrr_lat = None
-# for y in range(2014, 2022):
-#     for m in range(1, 13):
-#         p = os.path.join(VAULT_DIR, "weather_data", f"{y}-{m:02d}_HRRR_data.zarr")
-#         if os.path.exists(p):
-#             try:
-#                 ds_h = xr.open_zarr(p, consolidated=False)
-#                 hrrr_lon = ds_h.longitude.values
-#                 hrrr_lat = ds_h.latitude.values
-#                 ds_h.close()
-#                 break
-#             except:
-#                 pass
-#     if hrrr_lon is not None:
-#         break
-#
-# # Pre-find HRRR crop range globally
-# hrrr_row_min = hrrr_row_max = hrrr_col_min = hrrr_col_max = None
-# if hrrr_lon is not None and hrrr_lat is not None:
-#     mask_crop_hrrr = (hrrr_lon >= -122.5) & (hrrr_lon <= -120.5) & (hrrr_lat >= 47.8) & (hrrr_lat <= 49.5)
-#     rows_h, cols_h = np.where(mask_crop_hrrr)
-#     if len(rows_h) > 0:
-#         hrrr_row_min, hrrr_row_max = rows_h.min(), rows_h.max()
-#         hrrr_col_min, hrrr_col_max = cols_h.min(), cols_h.max()
 
-# Set HRRR variables to None since we're not using it
-hrrr_lon = None
-hrrr_lat = None
-hrrr_row_min = hrrr_row_max = hrrr_col_min = hrrr_col_max = None
+def in_bb(lon, lat):
+    """True where (lon, lat) is inside the crop box BB."""
+    return (lon >= BB[0]) & (lon <= BB[1]) & (lat >= BB[2]) & (lat <= BB[3])
+
 
 def process_year(year):
     """Processes all products for a single year and extracts daily percentiles (P95, P99) in their native grids."""
@@ -164,7 +187,7 @@ def process_year(year):
     year_results = {}
 
     # Initialize percentile maps
-    for prod in ['PRISM', 'Daymet', 'PNNL', 'CONUS404', 'UCLA', 'GridMET']:
+    for prod in PRODUCTS:
         year_results[prod] = {p: None for p in PERCENTILES}
         
     # 1. PRISM (new TIFF/zip source)
@@ -200,13 +223,13 @@ def process_year(year):
         
     # 3. PNNL WRF
     try:
-        pnnl_file = os.path.join(VAULT_DIR, "PNNL/historical", str(year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc")
+        pnnl_file = os.path.join(PNNL_DIR, str(year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc")
         if os.path.exists(pnnl_file):
             ds = xr.open_dataset(pnnl_file, chunks={'time': 720})
             da_daily = ds['PREC_ACC_NC'].resample(time='1D').sum()
-            
+
             # Crop PNNL WRF to Skagit bounding box
-            mask_crop = (pnnl_lon >= -122.5) & (pnnl_lon <= -120.5) & (pnnl_lat >= 47.8) & (pnnl_lat <= 49.5)
+            mask_crop = in_bb(pnnl_lon, pnnl_lat)
             rows, cols = np.where(mask_crop)
             row_min, row_max = rows.min(), rows.max()
             col_min, col_max = cols.min(), cols.max()
@@ -224,11 +247,10 @@ def process_year(year):
         
     # 4. CONUS404
     try:
-        conus_path = os.path.join(BASE_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr")
-        ds = xr.open_zarr(conus_path)
-        
+        ds = xr.open_zarr(CONUS_ZARR)
+
         # Crop CONUS404 to Skagit bounding box
-        mask_crop = (ds.lon >= -122.5) & (ds.lon <= -120.5) & (ds.lat >= 47.8) & (ds.lat <= 49.5)
+        mask_crop = in_bb(ds.lon, ds.lat)
         rows, cols = np.where(mask_crop.values)
         if len(rows) > 0:
             row_min, row_max = rows.min(), rows.max()
@@ -243,10 +265,10 @@ def process_year(year):
     except Exception as e:
         print(f"  [ERROR] CONUS404 {year}: {e}")
         
-    # 5. UCLA
+    # 5. UCLA (each file runs Sep to Aug, so a calendar year spans two files)
     try:
-        u_path_prev = os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec", f"prec.daily.era5.d02.{year-1}.nc")
-        u_path_curr = os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec", f"prec.daily.era5.d02.{year}.nc")
+        u_path_prev = os.path.join(UCLA_PREC_DIR, f"prec.daily.era5.d02.{year-1}.nc")
+        u_path_curr = os.path.join(UCLA_PREC_DIR, f"prec.daily.era5.d02.{year}.nc")
         da_parts = []
         if os.path.exists(u_path_prev):
             ds_prev = xr.open_dataset(u_path_prev)
@@ -265,7 +287,7 @@ def process_year(year):
             da_year = xr.concat(da_parts, dim='day')
             
             # Crop UCLA to Skagit bounding box
-            mask_crop = (ucla_lon >= -122.5) & (ucla_lon <= -120.5) & (ucla_lat >= 47.8) & (ucla_lat <= 49.5)
+            mask_crop = in_bb(ucla_lon, ucla_lat)
             rows, cols = np.where(mask_crop)
             row_min, row_max = rows.min(), rows.max()
             col_min, col_max = cols.min(), cols.max()
@@ -282,7 +304,7 @@ def process_year(year):
         
     # 6. GridMET
     try:
-        gridmet_path = os.path.join(VAULT_DIR, "gridmet", f"{year}_daily_4km_gridMET_data.zarr")
+        gridmet_path = os.path.join(GRIDMET_DIR, f"{year}_daily_4km_gridMET_data.zarr")
         if os.path.exists(gridmet_path):
             ds = xr.open_zarr(gridmet_path)
             if 'day' in ds.dims:
@@ -293,51 +315,7 @@ def process_year(year):
             ds.close()
     except Exception as e:
         print(f"  [ERROR] GridMET {year}: {e}")
-        
-    # # 7. HRRR (commented out - not plotting)
-    # if year >= 2014:
-    #     try:
-    #         hrrr_paths = []
-    #         for m in range(1, 13):
-    #             p = os.path.join(VAULT_DIR, "weather_data", f"{year}-{m:02d}_HRRR_data.zarr")
-    #             if os.path.exists(p): hrrr_paths.append(p)
-    #             p_fixed = os.path.join(VAULT_DIR, "weather_data", f"{year}-{m:02d}_HRRR_data_fixed_time.zarr")
-    #             if os.path.exists(p_fixed): hrrr_paths.append(p_fixed)
-    #         next_jan = os.path.join(VAULT_DIR, "weather_data", f"{year+1}-01_HRRR_data.zarr")
-    #         if os.path.exists(next_jan): hrrr_paths.append(next_jan)
-    #
-    #         da_months = []
-    #         for p in hrrr_paths:
-    #             ds_h = xr.open_zarr(p, consolidated=False)
-    #             # Crop to bounding box first (huge speedup)
-    #             if hrrr_row_min is not None:
-    #                 ds_h_cropped = ds_h.isel(y=slice(hrrr_row_min, hrrr_row_max+1), x=slice(hrrr_col_min, hrrr_col_max+1))
-    #             else:
-    #                 ds_h_cropped = ds_h
-    #             ds_h_cropped = ds_h_cropped.sortby('time').drop_duplicates('time')
-    #             var_h = 'APCP_sfc' if 'APCP_sfc' in ds_h_cropped.data_vars else 'tp'
-    #             da_h_daily = (ds_h_cropped[var_h] / 6.0).resample(time='1D').sum().compute()
-    #             da_h_daily = da_h_daily.drop_vars(['latitude', 'longitude'], errors='ignore')
-    #             da_months.append(da_h_daily)
-    #             ds_h.close()
-    #
-    #         if da_months:
-    #             da_year = xr.concat(da_months, dim='time').sortby('time').drop_duplicates('time')
-    #             da_year = da_year.sel(time=slice(f"{year}-01-01", f"{year}-12-31"))
-    #             if da_year.sizes['time'] > 0:
-    #                 hrrr_lon_cropped = hrrr_lon[hrrr_row_min:hrrr_row_max+1, hrrr_col_min:hrrr_col_max+1]
-    #                 hrrr_lat_cropped = hrrr_lat[hrrr_row_min:hrrr_row_max+1, hrrr_col_min:hrrr_col_max+1]
-    #
-    #                 times = pd.to_datetime(da_year.time.values)
-    #                 for s_name, months in SEASONS.items():
-    #                     mask = np.isin(times.month, months)
-    #                     if np.any(mask):
-    #                         mean_s = da_year.isel(time=mask).mean(dim='time')
-    #                         mean_s = mean_s.assign_coords(lat=(('y', 'x'), hrrr_lat_cropped), lon=(('y', 'x'), hrrr_lon_cropped))
-    #                         year_results['HRRR'][s_name] = mean_s
-    #     except Exception as e:
-    #         print(f"  [ERROR] HRRR {year}: {e}")
-            
+
     return year_results
 
 def align_coords(g, template):
@@ -399,8 +377,8 @@ def main():
     else:
         prism_lon_2d, prism_lat_2d = prism_lon_full, prism_lat_full
 
-    # Crop reference grid to Skagit map extent bounds: [-122.5, -120.5, 47.8, 49.5]
-    mask_crop = (prism_lon_2d >= -122.5) & (prism_lon_2d <= -120.5) & (prism_lat_2d >= 47.8) & (prism_lat_2d <= 49.5)
+    # Crop reference grid to the Skagit bounding box BB
+    mask_crop = in_bb(prism_lon_2d, prism_lat_2d)
     rows, cols = np.where(mask_crop)
     row_min, row_max = rows.min(), rows.max()
     col_min, col_max = cols.min(), cols.max()
@@ -410,21 +388,13 @@ def main():
     print(f"Cropped PRISM 4km reference grid shape: {ref_lon.shape}")
     
     # Pre-crop UCLA coordinates for regridding coordination
-    mask_crop_u = (ucla_lon >= -122.5) & (ucla_lon <= -120.5) & (ucla_lat >= 47.8) & (ucla_lat <= 49.5)
+    mask_crop_u = in_bb(ucla_lon, ucla_lat)
     rows_u, cols_u = np.where(mask_crop_u)
     row_min_u, row_max_u = rows_u.min(), rows_u.max()
     col_min_u, col_max_u = cols_u.min(), cols_u.max()
     ucla_lon_cropped = ucla_lon[row_min_u:row_max_u+1, col_min_u:col_max_u+1]
     ucla_lat_cropped = ucla_lat[row_min_u:row_max_u+1, col_min_u:col_max_u+1]
 
-    # # Pre-crop HRRR coordinates for regridding coordination (commented out - not using HRRR)
-    # mask_crop_h = (hrrr_lon >= -122.5) & (hrrr_lon <= -120.5) & (hrrr_lat >= 47.8) & (hrrr_lat <= 49.5)
-    # rows_h, cols_h = np.where(mask_crop_h)
-    # row_min_h, row_max_h = rows_h.min(), rows_h.max()
-    # col_min_h, col_max_h = cols_h.min(), cols_h.max()
-    # hrrr_lon_cropped = hrrr_lon[row_min_h:row_max_h+1, col_min_h:col_max_h+1]
-    # hrrr_lat_cropped = hrrr_lat[row_min_h:row_max_h+1, col_min_h:col_max_h+1]
-    
     # Load GIS boundary files early for regridding/clipping
     boundary_gdf = gpd.read_file(BOUNDARY_PATH)
     
@@ -439,28 +409,25 @@ def main():
     mask_2d = inside.reshape(ref_lon.shape)
     
     # Check cache to avoid re-extracting large raw datasets
-    cache_path = os.path.join(OUT_DIR, "percentiles_cache.pkl")
-    years = range(1981, 2020) # 1981 to 2019
+    cache_path = CACHE_PATH
     if os.path.exists(cache_path):
-        print(f"Loading cached seasonal averages from {cache_path}...")
-        import pickle
+        print(f"Loading cached yearly percentile maps from {cache_path}...")
         with open(cache_path, 'rb') as f:
             yearly_dicts = pickle.load(f)
     else:
-        # Run years in parallel (n_jobs=12)
-        print(f"Starting parallel data extraction across {len(years)} years with n_jobs=12...")
-        yearly_dicts = Parallel(n_jobs=12)(delayed(process_year)(y) for y in years)
-        print(f"Caching seasonal averages to {cache_path}...")
-        import pickle
+        # Run years in parallel
+        print(f"Starting parallel data extraction across {len(YEARS)} years with n_jobs={N_JOBS}...")
+        yearly_dicts = Parallel(n_jobs=N_JOBS)(delayed(process_year)(y) for y in YEARS)
+        print(f"Caching yearly percentile maps to {cache_path}...")
         try:
             with open(cache_path, 'wb') as f:
                 pickle.dump(yearly_dicts, f)
         except Exception as e:
             print(f"  [WARNING] Failed to write cache: {e}")
-    
+
     # 2. Combine and Average percentile maps in their native grids with coordinate alignment
     print("Averaging multi-year percentile maps...")
-    products = ['PRISM', 'Daymet', 'PNNL', 'CONUS404', 'UCLA', 'GridMET']
+    products = PRODUCTS
     native_averages = {prod: {p: None for p in PERCENTILES} for prod in products}
 
     for prod in products:
@@ -483,25 +450,7 @@ def main():
                             grids.append(g_aligned)
             if grids:
                 native_averages[prod][p_name] = xr.concat(grids, dim='year').mean(dim='year')
-                
-    # # Calculate PRISM 2014-2019 sub-average for HRRR bias comparison (not needed since HRRR is commented out)
-    # prism_14_19_averages = {s: None for s in SEASONS}
-    # for s_name in SEASONS:
-    #     grids_14_19 = []
-    #     template = None
-    #     for y, y_dict in zip(years, yearly_dicts):
-    #         if y >= 2014:
-    #             g = y_dict['PRISM'][s_name]
-    #             if g is not None:
-    #                 if template is None:
-    #                     template = g
-    #                     grids_14_19.append(g)
-    #                 else:
-    #                     g_aligned = align_coords(g, template)
-    #                     grids_14_19.append(g_aligned)
-    #     if grids_14_19:
-    #         prism_14_19_averages[s_name] = xr.concat(grids_14_19, dim='year').mean(dim='year')
-                
+
     # 3. Regrid percentile maps to the reference PRISM grid
     print("Regridding percentile maps to PRISM 4km grid...")
     regridded_averages = {prod: {p: None for p in PERCENTILES} for prod in products}
@@ -514,7 +463,7 @@ def main():
             regridded_averages[prod][p_name] = regrid_to_reference(da_src, ref_lat, ref_lon, mask_2d)
 
     # 4. Calculate differences relative to PRISM
-    biases = ['Daymet', 'PNNL', 'CONUS404', 'UCLA', 'GridMET']
+    biases = BIAS_PRODUCTS
     regridded_biases = {b: {p: None for p in PERCENTILES} for b in biases}
 
     for b in biases:
@@ -542,11 +491,11 @@ def main():
     all_diff = all_diff[~np.isnan(all_diff)]
     
     # 99.5th percentile for limits to exclude extreme outliers
-    vmax_precip = int(np.ceil(np.percentile(all_precip, 99.5)))
+    vmax_precip = int(np.ceil(np.percentile(all_precip, COLOR_LIMIT_PERCENTILE)))
     vmax_precip = max(vmax_precip, 1)
     vmin_precip = 0
-    
-    vmax_diff = np.percentile(np.abs(all_diff), 99.5)
+
+    vmax_diff = np.percentile(np.abs(all_diff), COLOR_LIMIT_PERCENTILE)
     vmax_diff = np.ceil(vmax_diff * 2) / 2.0  # round to nearest 0.5
     vmax_diff = max(vmax_diff, 0.5)
     vmin_diff = -vmax_diff
@@ -556,24 +505,17 @@ def main():
     
     # 6. Load geographical files
     subbasin_gdf = gpd.read_file(SUBBASIN_PATH) if os.path.exists(SUBBASIN_PATH) else None
-    map_extent = [-122.35, -120.65, 47.90, 49.35]
-    
+    map_extent = MAP_EXTENT
+
     # 7. Generate Figure 1: Products
     print("Plotting direct products...")
-    # Publication font sizes (figures are 16-18 in wide; expect ~0.4x reduction to journal page width)
-    FONT_SUPTITLE = 24
-    FONT_TITLE = 18       # column titles
-    FONT_ROW_LABEL = 20
-    FONT_CBAR_LABEL = 18
-    FONT_CBAR_TICK = 16
-
     plt.rcParams.update({
         'font.size': FONT_CBAR_LABEL,
         'font.family': 'sans-serif',
         'font.sans-serif': ['DejaVu Sans', 'Arial']
     })
-    
-    fig1, axes1 = plt.subplots(2, 6, figsize=(18, 8),
+
+    fig1, axes1 = plt.subplots(len(PERCENTILES), len(products), figsize=FIGSIZE_PRODUCTS,
                                subplot_kw={"projection": ccrs.PlateCarree()},
                                facecolor='#ffffff')
 
@@ -586,7 +528,7 @@ def main():
             # plot using pcolormesh
             im_precip = ax.pcolormesh(ref_lon, ref_lat, grid,
                                       transform=ccrs.PlateCarree(),
-                                      cmap="Greens", vmin=vmin_precip, vmax=vmax_precip,
+                                      cmap=CMAP_PRECIP, vmin=vmin_precip, vmax=vmax_precip,
                                       shading='auto')
 
             # Styling
@@ -620,12 +562,12 @@ def main():
                  fontsize=FONT_SUPTITLE, fontweight='bold', y=1.06)
 
     print(f"Saving Products map to {OUT_PRODUCTS_IMG}...")
-    plt.savefig(OUT_PRODUCTS_IMG, dpi=300, bbox_inches='tight')
+    plt.savefig(OUT_PRODUCTS_IMG, dpi=DPI, bbox_inches='tight')
     plt.close()
 
     # 8. Generate Figure 2: Biases
     print("Plotting biases (Product - PRISM)...")
-    fig2, axes2 = plt.subplots(2, 5, figsize=(16, 8),
+    fig2, axes2 = plt.subplots(len(PERCENTILES), len(biases), figsize=FIGSIZE_BIASES,
                                subplot_kw={"projection": ccrs.PlateCarree()},
                                facecolor='#ffffff')
 
@@ -638,7 +580,7 @@ def main():
             # plot using pcolormesh (diverging RdBu_r colormap centered at 0)
             im_diff = ax.pcolormesh(ref_lon, ref_lat, grid,
                                     transform=ccrs.PlateCarree(),
-                                    cmap="RdBu_r", vmin=vmin_diff, vmax=vmax_diff,
+                                    cmap=CMAP_BIAS, vmin=vmin_diff, vmax=vmax_diff,
                                     shading='auto')
 
             # Styling
@@ -673,7 +615,7 @@ def main():
                  fontsize=FONT_SUPTITLE, fontweight='bold', y=1.06)
 
     print(f"Saving Biases map to {OUT_BIASES_IMG}...")
-    plt.savefig(OUT_BIASES_IMG, dpi=300, bbox_inches='tight')
+    plt.savefig(OUT_BIASES_IMG, dpi=DPI, bbox_inches='tight')
     plt.close()
     
     print("Multi-product maps successfully generated!")

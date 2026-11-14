@@ -1,66 +1,145 @@
-"""
-Multi-panel figure: for each row (one AR / non-AR date pair + one events CSV),
-plot cumulative PRISM precipitation, cumulative streamflow, and the distribution
-of AR scales across streamflow buckets.
+"""AR vs non-AR events: cumulative precipitation, streamflow and AR-scale distribution.
+
+Publication panel figure with one row per event sample and three columns:
+
+Rows (each uses its own events CSV)
+    (a) No filtering: all non-AR events (0day_taking_min_and_filling)
+    (b) Non-AR events at least 5 days away from AR events (5day_taking_min_and_filling)
+
+Columns
+    1. Cumulative PRISM basin-mean precipitation, T-3 to T+5 days around the
+       event date: median and min-max band of the top 50 AR events vs the top
+       50 non-AR events.
+    2. Cumulative USGS 12200500 discharge (as mm over the drainage area),
+       T-3 to T+8 days, for the same events.
+    3. Percentage of each AR scale (0-5) within each streamflow bucket, using
+       ALL events of the row's events CSV in water years 1982-2024
+       (1 Oct 1981 - 30 Sep 2024).
+
+The top 50 events of each type are those with the largest PRISM 3-day total
+(``prism_3d_tot``: event day and the previous 2 days) over the whole record
+of the row's events CSV (Jan 1981 - Dec 2024); this selection was previously
+done in comparison.ipynb. The daily PRISM values of the selected
+events are cached in panel_data_row_<row>_<ar|non_ar>_prism.csv; a cache is
+reused only while it holds exactly the selected events, otherwise it is
+rebuilt from the PRISM files.
+
+Input
+    /data0/skagit_met/data_transfer/data/prism_new_hq/...   (daily PRISM, outside this repository)
+    data/GIS/SkagitSubBasin_HUC8.geojson
+    data/usgs_12200500_discharge.rdb
+    analysis/outputs/0day_taking_min_and_filling/3_multi_product_bulk_bias_data.csv
+    analysis/outputs/5day_taking_min_and_filling/3_multi_product_bulk_bias_data.csv
+Output
+    plots/top_50_ar_vs_non-AR/ar_vs_non_ar_panel_prism.png
+    plots/top_50_ar_vs_non-AR/panel_data_row_<a|b>_<ar|non_ar>_prism.csv   (cache)
+
+Usage
+    python ar_vs_non_ar_panel_figure.py
 """
 
 import os
-import zipfile
 import tempfile
+import zipfile
+from pathlib import Path
+
+import geopandas as gpd
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import geopandas as gpd
 import regionmask
 import rioxarray
 from scipy.integrate import cumulative_trapezoid
 
+# Shared raw-data archive (outside this repository)
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-BASE_DIR = "/data0/hernanqd/plots_code/skagit-met/skagit_met_for_publication"
-HUC8_GEO = os.path.join(BASE_DIR, "data/GIS/SkagitSubBasin_HUC8.geojson")
-HYDRO_Q_PATH = os.path.join(BASE_DIR, "data", "usgs_12200500_discharge.rdb")
 PRISM_ROOT = os.path.join(VAULT_DIR, "prism_new_hq")
+
+# Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
+BASE_DIR = Path(__file__).resolve().parents[2]
+HUC8_GEO = BASE_DIR / "data" / "GIS" / "SkagitSubBasin_HUC8.geojson"
+HYDRO_Q_PATH = BASE_DIR / "data" / "usgs_12200500_discharge.rdb"
+OUTPUTS_CSV_DIR = BASE_DIR / "analysis" / "outputs"
+OUTPUT_DIR = Path(__file__).resolve().parent
 
 DRAINAGE_AREA_MI2 = 3093  # USGS 12200500
 DRAINAGE_AREA_FT2 = DRAINAGE_AREA_MI2 * 27_878_400
+SECONDS_PER_DAY = 60 * 60 * 24
+MM_PER_FT = 304.8
 
-OUTPUT_DIR = os.path.join(BASE_DIR, "plots/top_50_ar_vs_non-AR")
-OUTPUTS_CSV_DIR = os.path.join(BASE_DIR, "analysis/outputs")
 PRODUCT = "prism"
+
+# Event windows, in days relative to the event date (inclusive)
+PRECIP_WINDOW_DAYS = (-3, 5)
+DISCHARGE_WINDOW_DAYS = (-3, 8)
+
+# Study period in water years (WY N = 1 Oct of year N-1 to 30 Sep of year N),
+# used for column 3 only. The top-N selection (columns 1-2) uses the whole record.
+WY_START, WY_END = 1982, 2024
+
+# Event selection (formerly comparison.ipynb): for each row, the TOP_N AR events
+# (ar_scale > 0) and the TOP_N non-AR events (ar_scale == 0) of that row's events
+# CSV, ranked by RANK_COLUMN (PRISM 3-day total: event day and the previous 2 days).
+TOP_N = 50
+RANK_COLUMN = "prism_3d_tot"
 
 # ---- Edit these rows: each row is one line of panels in the figure ----
 ROWS = [
     {
         "label": "(a)",
         "description": "No filtering",
-        "ar_dates": ['1990-11-24', '2006-11-07', '2009-01-08', '1995-11-30', '2003-11-19', '2003-10-22', '2003-10-21', '2003-10-18', '1997-03-20', '1989-11-10', '1986-01-19', '1983-01-10', '1995-11-08', '2021-11-15', '1986-11-24', '1988-10-16', '1986-02-25', '2007-12-04', '2014-11-28', '1995-02-20', '2005-01-20', '2002-02-22', '1982-01-24', '1998-11-16', '2011-01-17', '1982-02-14', '1998-12-30', '2004-12-11', '2017-11-23', '2002-01-08', '1988-04-06', '2021-10-29', '1997-01-01', '1986-11-20', '2022-12-27', '1985-10-27', '2001-11-15', '1981-02-17', '1984-01-05', '1999-11-14', '1994-12-20', '2003-03-14', '1997-01-20', '1983-11-16', '1984-11-03', '2006-01-12', '1998-11-26', '1998-12-28', '1984-01-25', '2018-11-04'],
-        "non_ar_dates": ['2009-01-09', '1995-11-09', '1995-12-01', '2006-11-09', '2021-11-16', '1997-03-21', '2017-11-24', '2003-10-23', '1995-02-21', '2015-11-14', '1986-02-26', '2002-02-24', '1986-11-25', '2015-02-08', '1982-12-04', '1986-11-22', '2017-10-20', '2020-01-08', '1981-02-18', '1988-04-08', '2014-11-29', '1991-01-15', '1989-12-06', '2022-11-06', '2015-11-18', '2020-02-02', '1983-01-11', '1990-02-12', '2011-01-18', '2018-11-28', '2008-11-09', '2015-12-10', '1991-12-08', '2014-01-14', '1982-02-17', '2004-12-12', '1985-10-25', '2008-11-14', '1990-01-10', '2007-03-25', '2003-11-21', '1998-11-22', '1998-12-14', '1997-01-03', '2010-12-15', '2015-01-07', '2021-10-30', '2006-01-11', '1998-11-27', '2015-11-03'],
         "events_csv": os.path.join(OUTPUTS_CSV_DIR, "0day_taking_min_and_filling/3_multi_product_bulk_bias_data.csv"),
     },
     {
         "label": "(b)",
         "description": "Non-ARs ≥5 days from ARs",
-        "ar_dates": ['1990-11-24', '2006-11-07', '2009-01-08', '1995-11-30', '2003-11-19', '2003-10-22', '2003-10-21', '2003-10-18', '1997-03-20', '1989-11-10', '1986-01-19', '1983-01-10', '1995-11-08', '2021-11-15', '1986-11-24', '1988-10-16', '1986-02-25', '2007-12-04', '2014-11-28', '1995-02-20', '2005-01-20', '2002-02-22', '1982-01-24', '1998-11-16', '2011-01-17', '1982-02-14', '1998-12-30', '2004-12-11', '2017-11-23', '2002-01-08', '1988-04-06', '2021-10-29', '1997-01-01', '1986-11-20', '2022-12-27', '1985-10-27', '2001-11-15', '1981-02-17', '1984-01-05', '1999-11-14', '1994-12-20', '2003-03-14', '1997-01-20', '1983-11-16', '1984-11-03', '2006-01-12', '1998-11-26', '1998-12-28', '1984-01-25', '2018-11-04'],
-        "non_ar_dates": ['2019-12-23', '1997-09-18', '2014-02-19', '2024-03-02', '1990-01-29', '2012-03-16', '2011-03-16', '2007-02-21', '1982-02-01', '2012-12-07', '1997-02-20', '1998-01-17', '1985-06-08', '1991-01-01', '2020-01-13', '2024-06-05', '2007-12-25', '1998-12-02', '1999-01-20', '1991-11-26', '2017-03-19', '2023-12-11', '2011-10-12', '2011-11-14', '2011-04-06', '1982-01-16', '2004-09-17', '2013-11-19', '1997-04-22', '2021-12-25', '2000-01-10', '1984-11-30', '1988-03-09', '2006-04-16', '2001-11-01', '2003-02-22', '1999-03-02', '1981-04-11', '1985-11-08', '1996-12-22', '2019-01-24', '1994-02-18', '1990-08-31', '1995-01-19', '2018-04-18', '2001-12-04', '2009-12-22', '2001-02-05', '1993-11-22', '2024-12-30'],
         "events_csv": os.path.join(OUTPUTS_CSV_DIR, "5day_taking_min_and_filling/3_multi_product_bulk_bias_data.csv"),
     },
 ]
 
 COLOR_AR = '#1f77b4'
 COLOR_NON_AR = '#ff7f0e'
+MARKER_AR = 's'
+MARKER_NON_AR = 'o'
+
+# Streamflow buckets (cms), left-closed: [0, 600), [600, 1200), ...
 SF_LABELS = ["< 600", "600 - 1200", "1200 - 1700", "> 1700"]
 SF_BINS = [0, 600, 1200, 1700, float('inf')]
 CFS_PER_CMS = 35.3147
 
-# Publication font sizes (figure is 15 in wide; expect ~0.5x reduction to journal page width)
-FONT_PANEL_LABEL = 20
-FONT_TITLE = 15
-FONT_LABEL = 14
-FONT_TICK = 13
-FONT_LEGEND = 12
+# Figure settings
+PANEL_ROW_SIZE = (18, 5)  # width, height per row (inches); wide enough for the column-3 tick labels
+COLUMN_SPACING = 0.28  # horizontal space between columns (fraction of the mean axes width)
+COLUMN_WIDTHS = [1, 1, 1.5]  # relative widths; column 3 is wider so its bucket labels fit
+ROW_SPACING = 0.55  # vertical space between rows (fraction of the mean axes height), room for the row labels
+DPI = 300
+
+# Publication font sizes (figure is 18 in wide; expect ~0.4x reduction to journal page width).
+# Scaled 1.2x from the 15-in version so text prints at the same size after reduction.
+FONT_PANEL_LABEL = 24
+FONT_TITLE = 18
+FONT_LABEL = 17
+FONT_TICK = 16
+FONT_LEGEND = 14
 
 
-# ---------------- Data loading (copied from ar_vs_non_ar_comparison.py) ----------------
+# ---------------- Event selection and data loading ----------------
+
+def load_events(events_csv):
+    """Read an events CSV and keep only events in water years WY_START-WY_END."""
+    events = pd.read_csv(events_csv)
+    dates = pd.to_datetime(events['date'])
+    water_year = dates.dt.year + (dates.dt.month >= 10)  # Oct-Dec belong to the next WY
+    return events[water_year.between(WY_START, WY_END)].copy()
+
+
+def select_top_events(events_csv, n=TOP_N, rank_column=RANK_COLUMN):
+    """Return (ar_dates, non_ar_dates): the n largest events by rank_column for each type (whole record)."""
+    events = pd.read_csv(events_csv)
+    ar_dates = events[events['ar_scale'] > 0].nlargest(n, rank_column)['date'].tolist()
+    non_ar_dates = events[events['ar_scale'] == 0].nlargest(n, rank_column)['date'].tolist()
+    return ar_dates, non_ar_dates
+
 
 def get_decade_folder(year: int) -> str:
     if 2021 <= year <= 2024:
@@ -135,8 +214,9 @@ def calculate_basin_mean(da, mask_2d):
 
 
 def extract_event_window(event_date, gdf):
-    """Daily basin-mean PRISM precipitation for T-3 to T+5."""
-    window_dates = [event_date + pd.Timedelta(days=i) for i in range(-3, 6)]
+    """Daily basin-mean PRISM precipitation over PRECIP_WINDOW_DAYS (T-3 to T+5)."""
+    first, last = PRECIP_WINDOW_DAYS
+    window_dates = [event_date + pd.Timedelta(days=i) for i in range(first, last + 1)]
     values = {}
     for date in window_dates:
         try:
@@ -151,6 +231,7 @@ def extract_event_window(event_date, gdf):
 
 
 def extract_all_events(event_dates):
+    """Extract the PRISM window of every event; returns {event_date_str: DataFrame}."""
     gdf = load_regions()
     all_data = {}
     for event_date_str in event_dates:
@@ -182,24 +263,26 @@ def calculate_cumulative_discharge_mm(discharge_df):
     """Convert discharge in cfs to cumulative mm using trapezoidal integration."""
     if discharge_df.empty:
         return pd.Series(dtype=float)
-    discharge_mmd = discharge_df['discharge_cfs'] / DRAINAGE_AREA_FT2 * 60 * 60 * 24 * 304.8
+    # ft3/s spread over the drainage area -> ft/s -> mm/day
+    discharge_mmd = discharge_df['discharge_cfs'] / DRAINAGE_AREA_FT2 * SECONDS_PER_DAY * MM_PER_FT
     dates = pd.to_datetime(discharge_df['date'].values)
-    days = (dates - dates[0]).total_seconds() / (60 * 60 * 24)
+    days = (dates - dates[0]).total_seconds() / SECONDS_PER_DAY
     cum = cumulative_trapezoid(discharge_mmd.values, x=days.values, initial=0)
     return pd.Series(cum, index=discharge_df.index)
 
 
 def compute_cumulative_discharge_stats(event_dates, q_df):
-    """Median and min-max cumulative discharge for T-3 to T+8, indexed by relative days."""
+    """Median and min-max cumulative discharge over DISCHARGE_WINDOW_DAYS (T-3 to T+8), indexed by relative days."""
+    first, last = DISCHARGE_WINDOW_DAYS
     cumulative_series = []
     for event_date_str in event_dates:
         event_date = pd.to_datetime(event_date_str)
-        window = q_df[(q_df['date'] >= event_date - pd.Timedelta(days=3)) &
-                      (q_df['date'] <= event_date + pd.Timedelta(days=8))]
+        window = q_df[(q_df['date'] >= event_date + pd.Timedelta(days=first)) &
+                      (q_df['date'] <= event_date + pd.Timedelta(days=last))]
         if not window.empty:
             cum = calculate_cumulative_discharge_mm(window)
             delta = window['date'] - event_date
-            cum.index = delta.dt.days + delta.dt.seconds / (24 * 3600)
+            cum.index = delta.dt.days + delta.dt.seconds / SECONDS_PER_DAY
             cumulative_series.append(cum)
     if not cumulative_series:
         return None, None, None
@@ -211,6 +294,7 @@ def compute_cumulative_discharge_stats(event_dates, q_df):
 
 
 def plot_band(ax, median, lo, hi, color, marker, name):
+    """Plot a median line with a shaded min-max band (skipped if there is no data)."""
     if median is None:
         return
     ax.fill_between(median.index, lo, hi, alpha=0.25, color=color, label=f'{name} (min-max)')
@@ -219,7 +303,8 @@ def plot_band(ax, median, lo, hi, color, marker, name):
 
 
 def ar_scale_by_streamflow_bucket(events_csv):
-    events = pd.read_csv(events_csv)
+    """Percentage of each AR scale within each streamflow bucket, over all events in events_csv (WY_START-WY_END)."""
+    events = load_events(events_csv)
     events['discharge_cms'] = events['discharge_cfs'] / CFS_PER_CMS
     events['streamflow_bucket'] = pd.cut(events['discharge_cms'], bins=SF_BINS, labels=SF_LABELS, right=False)
     counts = events.groupby(['streamflow_bucket', 'ar_scale'], observed=False).size().unstack(fill_value=0)
@@ -227,6 +312,7 @@ def ar_scale_by_streamflow_bucket(events_csv):
 
 
 def plot_bucket_bars(ax, pct):
+    """Stacked bars of AR-scale percentages per streamflow bucket (reversed inferno colors)."""
     cmap = plt.cm.inferno
     scales = sorted(pct.columns)
     n = len(scales)
@@ -238,7 +324,7 @@ def plot_bucket_bars(ax, pct):
                color=cmap(0.95 - (i / (n - 1)) * 0.85), edgecolor='white', linewidth=1.5)
         bottom += vals
     ax.set_xticks(x)
-    ax.set_xticklabels(SF_LABELS)
+    ax.set_xticklabels([label.replace(' - ', '–') for label in SF_LABELS])  # "600–1200": narrower
     ax.tick_params(axis='both', labelsize=FONT_TICK)
     ax.set_xlabel('Streamflow Bucket (cms)', fontsize=FONT_LABEL, fontweight='bold')
     ax.set_ylabel('Percentage (%)', fontsize=FONT_LABEL, fontweight='bold')
@@ -250,12 +336,18 @@ def plot_bucket_bars(ax, pct):
 
 
 def load_or_extract(dates, csv_path):
-    """Read event precipitation from csv_path if it exists; otherwise extract it and save it there.
-    Delete the CSV if you change the dates."""
+    """Return event precipitation for `dates`, using csv_path as a cache.
+
+    The cache is used only if it holds exactly the requested event dates;
+    otherwise (missing file or different events) the data are extracted from
+    the PRISM files again and the cache is overwritten.
+    """
     if os.path.exists(csv_path):
-        print(f"  Loading saved data: {csv_path}")
         df = pd.read_csv(csv_path, parse_dates=['date'])
-        return {ev: g.set_index('date')[[PRODUCT]] for ev, g in df.groupby('event_date')}
+        if set(df['event_date']) == set(dates):
+            print(f"  Loading saved data: {csv_path}")
+            return {ev: g.set_index('date')[[PRODUCT]] for ev, g in df.groupby('event_date')}
+        print(f"  Saved data does not match the selected events, extracting again: {csv_path}")
     data = extract_all_events(dates)
     pd.concat(data, names=['event_date', 'date']).reset_index().to_csv(csv_path, index=False)
     print(f"  Saved data: {csv_path}")
@@ -265,25 +357,26 @@ def load_or_extract(dates, csv_path):
 def main():
     q_df = load_usgs_rdb(HYDRO_Q_PATH, 'discharge_cfs')
 
-    fig, axes = plt.subplots(len(ROWS), 3, figsize=(15, 5 * len(ROWS)),
-                             gridspec_kw={'width_ratios': [1, 1, 1.1], 'wspace': 0.18, 'hspace': 0.4})
+    fig, axes = plt.subplots(len(ROWS), 3, figsize=(PANEL_ROW_SIZE[0], PANEL_ROW_SIZE[1] * len(ROWS)),
+                             gridspec_kw={'width_ratios': COLUMN_WIDTHS, 'wspace': COLUMN_SPACING, 'hspace': ROW_SPACING})
     axes = np.atleast_2d(axes)
 
     for r, row in enumerate(ROWS):
         ax_p, ax_q, ax_b = axes[r]
-        print(f"Row {row['label']}: extracting {len(row['ar_dates'])} AR / {len(row['non_ar_dates'])} non-AR events...")
+        ar_dates, non_ar_dates = select_top_events(row['events_csv'])
+        print(f"Row {row['label']}: extracting {len(ar_dates)} AR / {len(non_ar_dates)} non-AR events...")
         tag = row['label'].strip('()')
-        ar_data = load_or_extract(row['ar_dates'], os.path.join(OUTPUT_DIR, f"panel_data_row_{tag}_ar_{PRODUCT}.csv"))
-        non_ar_data = load_or_extract(row['non_ar_dates'], os.path.join(OUTPUT_DIR, f"panel_data_row_{tag}_non_ar_{PRODUCT}.csv"))
+        ar_data = load_or_extract(ar_dates, os.path.join(OUTPUT_DIR, f"panel_data_row_{tag}_ar_{PRODUCT}.csv"))
+        non_ar_data = load_or_extract(non_ar_dates, os.path.join(OUTPUT_DIR, f"panel_data_row_{tag}_non_ar_{PRODUCT}.csv"))
 
-        plot_band(ax_p, *compute_cumulative_stats(non_ar_data, PRODUCT), COLOR_NON_AR, 'o', 'Non-AR')
-        plot_band(ax_p, *compute_cumulative_stats(ar_data, PRODUCT), COLOR_AR, 's', 'AR')
-        plot_band(ax_q, *compute_cumulative_discharge_stats(row['non_ar_dates'], q_df), COLOR_NON_AR, 'o', 'Non-AR')
-        plot_band(ax_q, *compute_cumulative_discharge_stats(row['ar_dates'], q_df), COLOR_AR, 's', 'AR')
+        plot_band(ax_p, *compute_cumulative_stats(non_ar_data, PRODUCT), COLOR_NON_AR, MARKER_NON_AR, 'Non-AR')
+        plot_band(ax_p, *compute_cumulative_stats(ar_data, PRODUCT), COLOR_AR, MARKER_AR, 'AR')
+        plot_band(ax_q, *compute_cumulative_discharge_stats(non_ar_dates, q_df), COLOR_NON_AR, MARKER_NON_AR, 'Non-AR')
+        plot_band(ax_q, *compute_cumulative_discharge_stats(ar_dates, q_df), COLOR_AR, MARKER_AR, 'AR')
 
         ax_q.sharey(ax_p)
         ax_q.tick_params(labelleft=False)
-        for ax, ylabel in [(ax_p, 'Cumulative Precipitation (mm)'), (ax_q, 'Cumulative Discharge (mm)')]:
+        for ax, ylabel in [(ax_p, 'Cumulative\nPrecipitation (mm)'), (ax_q, 'Cumulative\nDischarge (mm)')]:
             ax.set_xlabel('Days Relative to Event Date', fontsize=FONT_LABEL, fontweight='bold')
             ax.set_ylabel(ylabel, fontsize=FONT_LABEL, fontweight='bold')
             ax.legend(loc='upper left', fontsize=FONT_LEGEND, framealpha=0.95)
@@ -292,17 +385,17 @@ def main():
 
         plot_bucket_bars(ax_b, ar_scale_by_streamflow_bucket(row['events_csv']))
         # Top row sits above the column titles; other rows sit just above their axes
-        label_y = 1.22 if r == 0 else 1.04
+        label_y = 1.27 if r == 0 else 1.10
         ax_p.text(-0.18, label_y, f"{row['label']} {row['description']}", transform=ax_p.transAxes,
                   fontsize=FONT_PANEL_LABEL, fontweight='bold', va='bottom')
 
     axes[0, 0].set_title(f'Cumulative Precipitation\n({PRODUCT.upper()}, top 50)', fontsize=FONT_TITLE, fontweight='bold', pad=10)
     axes[0, 1].set_title('Cumulative Streamflow\n(top 50)', fontsize=FONT_TITLE, fontweight='bold', pad=10)
-    axes[0, 2].set_title('AR Scale by Streamflow Bucket\n(all events, WY 1982–2024)',
+    axes[0, 2].set_title(f'AR Scale by Streamflow Bucket\n(all events, WY {WY_START}–{WY_END})',
                          fontsize=FONT_TITLE, fontweight='bold', pad=10)
 
     output_path = os.path.join(OUTPUT_DIR, f'ar_vs_non_ar_panel_{PRODUCT}.png')
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(output_path, dpi=DPI, bbox_inches='tight')
     print(f"Plot saved to: {output_path}")
 
 
