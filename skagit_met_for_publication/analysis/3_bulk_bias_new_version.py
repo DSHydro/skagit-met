@@ -18,11 +18,6 @@ Products (column prefix):
     conus        CONUS404 daily
     ucla         UCLA WRF-ERA5 d02 daily
     gridmet      gridMET daily
-    hrrr         HRRR forecast hour 1, hourly summed to daily (from HRRR_FIRST_YEAR)
-    ornl_mean    ORNL DBCCA-Daymet downscaled CMIP6 (ssp585), mean of the 6 GCMs
-    ornl_median  ORNL DBCCA-Daymet downscaled CMIP6 (ssp585), median of the 6 GCMs
-                 (both from ORNL_CSV, pre-computed basin means; its DaymetV4
-                 column is excluded)
 
 Basin mean: unweighted mean of grid cells inside the union of the HUC8
 sub-basins in REGION_NAMES (Upper Skagit, Sauk, Lower Skagit), using
@@ -83,17 +78,13 @@ UCLA_DIR = os.path.join(VAULT_DIR, "ucla_era5_d02_daily")     # prec/prec.daily.
 UCLA_GEO_FILE = os.path.join(UCLA_DIR, "static/wrfinput_d02_coord.nc")
 GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")              # YYYY_daily_4km_gridMET_data.zarr
 GRIDMET_GRID_FILE = os.path.join(GRIDMET_DIR, "2021_daily_4km_gridMET_data.zarr")
-HRRR_DIR = os.path.join(VAULT_DIR, "weather_data")            # YYYY-MM_HRRR_data[_fixed_time].zarr
-HRRR_GRID_FILE = os.path.join(HRRR_DIR, "2014-12_HRRR_data.zarr")
 CONUS404_ZARR = os.path.join(PROJECT_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr")
-ORNL_CSV = "/data0/hernanqd/plots_code/exploring/daymet_skagit_precip_daily_basin_backfill.csv"
 
 # ============================================================
 # SETTINGS
 # ============================================================
 REGION_NAMES = ["Upper Skagit", "Sauk", "Lower Skagit"]  # HUC8 sub-basins forming the basin mask
 PNNL_LAST_YEAR = 2020    # PNNL historical run ends in 2020
-HRRR_FIRST_YEAR = 2014   # HRRR data start in 2014
 N_JOBS = 12              # parallel workers (one year per worker)
 
 def load_regions():
@@ -221,8 +212,8 @@ def process_year(year, event_dates, masks_2d):
     event_dates : array of datetime64
         Dates T (AR or non-AR days) in this year.
     masks_2d : dict
-        2D basin masks per product grid ('PNNL', 'CONUS404', 'UCLA', 'GridMET',
-        'HRRR'); the Daymet mask is added here from the Daymet file itself.
+        2D basin masks per product grid ('PNNL', 'CONUS404', 'UCLA', 'GridMET');
+        the Daymet mask is added here from the Daymet file itself.
 
     Returns
     -------
@@ -245,8 +236,7 @@ def process_year(year, event_dates, masks_2d):
     conus_daily = None
     ucla_daily = None
     gridmet_daily = None
-    hrrr_daily = None
-    
+
     # 1. PRISM (new format - TIFF zip files)
     prism_data = {}
     gdf = load_regions()
@@ -304,22 +294,6 @@ def process_year(year, event_dates, masks_2d):
     except Exception as e:
         print(f"Error processing Daymet for year {year}: {e}")
 
-    # 3.5 ORNL (Mean and Median Ensemble from backfill CSV)
-    ornl_mean_daily = None
-    ornl_median_daily = None
-    if os.path.exists(ORNL_CSV):
-        try:
-            ornl_df = pd.read_csv(ORNL_CSV, index_col=0, parse_dates=True)
-            ornl_df.index = pd.to_datetime(ornl_df.index).normalize()
-            ornl_mean_daily = ornl_df.iloc[:, 1:].mean(axis=1)  # mean across models
-            ornl_median_daily = ornl_df.iloc[:, 1:].median(axis=1)  # median across models
-            # Filter to window dates
-            available_dates = [d for d in window_dates if d in ornl_mean_daily.index]
-            if available_dates:
-                ornl_mean_daily = ornl_mean_daily.loc[available_dates]
-                ornl_median_daily = ornl_median_daily.loc[available_dates]
-        except: pass
-
     # 4. CONUS404
     if os.path.exists(CONUS404_ZARR):
         try:
@@ -369,49 +343,6 @@ def process_year(year, event_dates, masks_2d):
             gridmet_daily.index = gridmet_daily.index.normalize()
             ds.close()
         except: pass
-        
-    # 7. HRRR
-    if year >= HRRR_FIRST_YEAR:
-        hrrr_paths = []
-        for m in range(1, 13):
-            p = os.path.join(HRRR_DIR, f"{year}-{m:02d}_HRRR_data.zarr")
-            if os.path.exists(p): hrrr_paths.append(p)
-            p_fixed = os.path.join(HRRR_DIR, f"{year}-{m:02d}_HRRR_data_fixed_time.zarr")
-            if os.path.exists(p_fixed): hrrr_paths.append(p_fixed)
-        next_jan = os.path.join(HRRR_DIR, f"{year+1}-01_HRRR_data.zarr")
-        if os.path.exists(next_jan): hrrr_paths.append(next_jan)
-        
-        series_list = []
-        for p in hrrr_paths:
-            try:
-                ds = xr.open_zarr(p, consolidated=False)
-                var_name = 'APCP_sfc' if 'APCP_sfc' in ds.data_vars else 'tp'
-                if var_name in ds.data_vars:
-                    da_full = ds[var_name]
-                    if "forecast_hour" in ds.coords:
-                        da_full = da_full.where(ds.forecast_hour == 1, drop=True)
-                    elif "step" in ds.coords:
-                        if np.issubdtype(ds.step.dtype, np.timedelta64):
-                            da_full = da_full.where(ds.step == np.timedelta64(1, "h"), drop=True)
-                        else:
-                            da_full = da_full.where(ds.step == 1, drop=True)
-                    da_full = da_full.sortby('time').drop_duplicates('time')
-                    
-                    hourly_dates = []
-                    for d in window_dates:
-                        hourly_dates.extend(pd.date_range(d, d + pd.Timedelta(hours=23), freq='h'))
-                    available_hourly = [d for d in hourly_dates if d in da_full.time.values]
-                    if available_hourly:
-                        da_subset = da_full.sel(time=available_hourly)
-                        s_hourly = calculate_basin_mean(da_subset, masks_2d['HRRR'])
-                        s_daily = s_hourly.resample('1D').sum()
-                        s_daily.index = s_daily.index.normalize()
-                        series_list.append(s_daily)
-                ds.close()
-            except: pass
-        if series_list:
-            hrrr_daily = pd.concat(series_list).sort_index()
-            hrrr_daily = hrrr_daily[~hrrr_daily.index.duplicated(keep='first')]
 
     # Calculate 3-day and 7-day window totals and maximums
     results = []
@@ -444,8 +375,7 @@ def process_year(year, event_dates, masks_2d):
 
         # Calculate 7-day window totals and maximums for other products (T-6 through T)
         for name, daily_series in [('pnnl', pnnl_daily), ('daymet', daymet_daily),
-                                    ('conus', conus_daily), ('ucla', ucla_daily), ('gridmet', gridmet_daily),
-                                    ('hrrr', hrrr_daily), ('ornl_mean', ornl_mean_daily), ('ornl_median', ornl_median_daily)]:
+                                    ('conus', conus_daily), ('ucla', ucla_daily), ('gridmet', gridmet_daily)]:
             if daily_series is not None and all(d in daily_series.index for d in w_dates_7d):
                 row[f'{name}_7d_tot'] = daily_series.loc[w_dates_7d].sum()
                 row[f'{name}_7d_max'] = daily_series.loc[w_dates_7d].max()
@@ -538,10 +468,6 @@ def main():
     # GridMET
     sample_gridmet = xr.open_zarr(GRIDMET_GRID_FILE)
     masks_2d['GridMET'] = get_mask(gdf, sample_gridmet.lon, sample_gridmet.lat).any(dim='region')
-    
-    # HRRR
-    sample_hrrr = xr.open_zarr(HRRR_GRID_FILE)
-    masks_2d['HRRR'] = get_mask(gdf, sample_hrrr.longitude, sample_hrrr.latitude).any(dim='region')
 
     years = sorted(df_bulk['date'].dt.year.unique())
     print(f"Starting parallel extraction across {len(years)} years with n_jobs={N_JOBS}...")
@@ -570,8 +496,7 @@ def main():
     expected_cols = ['prism_3d_tot', 'prism_3d_max', 'prism_7d_tot', 'prism_7d_max',
                      'pnnl_7d_tot', 'pnnl_7d_max', 'daymet_7d_tot', 'daymet_7d_max',
                      'conus_7d_tot', 'conus_7d_max', 'ucla_7d_tot', 'ucla_7d_max',
-                     'gridmet_7d_tot', 'gridmet_7d_max', 'hrrr_7d_tot', 'hrrr_7d_max',
-                     'ornl_mean_7d_tot', 'ornl_mean_7d_max', 'ornl_median_7d_tot', 'ornl_median_7d_max']
+                     'gridmet_7d_tot', 'gridmet_7d_max']
     for col in expected_cols:
         if col not in df_bulk_updated.columns:
             df_bulk_updated[col] = np.nan

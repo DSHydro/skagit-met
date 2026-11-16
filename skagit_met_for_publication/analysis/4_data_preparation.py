@@ -42,7 +42,6 @@ KEEP_COLS = [
     "conus_7d_tot",
     "ucla_7d_tot",
     "gridmet_7d_tot",
-    "hrrr_7d_tot",
 ]
 
 

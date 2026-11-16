@@ -9,7 +9,7 @@ Steps:
        absolute bias  <PRODUCT>   = product_7d_tot - prism_7d_tot              [mm]
        percent bias   <PRODUCT>_% = (product_7d_tot - prism_7d_tot)
                                     / prism_7d_tot * 100                       [%]
-   for PNNL, Daymet, CONUS404, UCLA, GridMET and HRRR.
+   for PNNL, Daymet, CONUS404, UCLA and GridMET.
 
 Input (in ``<BASE_DIR>/analysis/outputs``):
     4_clean_bias_table.csv   (from script 4)
@@ -68,7 +68,6 @@ def main():
     df["CONUS404"] = df["conus_7d_tot"] - df["prism_7d_tot"]
     df["UCLA"] = df["ucla_7d_tot"] - df["prism_7d_tot"]
     df["GridMET"] = df["gridmet_7d_tot"] - df["prism_7d_tot"]
-    df["HRRR"] = df["hrrr_7d_tot"] - df["prism_7d_tot"]
 
     # Percent bias relative to PRISM [%]
     df["PNNL_%"] = (df["pnnl_7d_tot"] - df["prism_7d_tot"]) / df["prism_7d_tot"] * 100
@@ -76,7 +75,6 @@ def main():
     df["CONUS404_%"] = (df["conus_7d_tot"] - df["prism_7d_tot"]) / df["prism_7d_tot"] * 100
     df["UCLA_%"] = (df["ucla_7d_tot"] - df["prism_7d_tot"]) / df["prism_7d_tot"] * 100
     df["GridMET_%"] = (df["gridmet_7d_tot"] - df["prism_7d_tot"]) / df["prism_7d_tot"] * 100
-    df["HRRR_%"] = (df["hrrr_7d_tot"] - df["prism_7d_tot"]) / df["prism_7d_tot"] * 100
 
     os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
     df.to_csv(OUTPUT_CSV, index=False)

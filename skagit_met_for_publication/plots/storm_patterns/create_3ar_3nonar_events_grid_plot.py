@@ -489,8 +489,8 @@ for idx, (ax, (date_start_ucla, date_start, date_end, event_date, ar_category)) 
     plt.setp(ax.get_xticklabels(), rotation=30, ha='right', rotation_mode='anchor')
 
     # Each column has its own y scales, so both columns carry both y-axis labels
-    ax.set_ylabel('Precipitation (mm h$^{-1}$)', fontsize=GRID_FONT_LABEL, fontweight='bold')
-    ax2.set_ylabel('Discharge (m$^{3}$ s$^{-1}$)', fontsize=GRID_FONT_LABEL,
+    ax.set_ylabel('Precipitation (mm/h)', fontsize=GRID_FONT_LABEL, fontweight='bold')
+    ax2.set_ylabel('Discharge (cms)', fontsize=GRID_FONT_LABEL,
                    fontweight='bold', color=DISCHARGE_COLOR)
     if idx in (2, 5):                 # bottom row
         ax.set_xlabel('Date', fontsize=GRID_FONT_LABEL, fontweight='bold')
