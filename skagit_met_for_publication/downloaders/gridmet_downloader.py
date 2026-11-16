@@ -32,7 +32,6 @@ Used by (pointing at /data0/skagit_met/data_transfer/data/gridmet):
     plots/plot_specific_ar_and_non_ar_events/*.py
     plots/precipitation_long_term_means/water_year_cumulative.py
     plots/spatial_bias_distribution/*.py
-    plots/top_50_ar_vs_non-AR/exploring/cumulative_precipitation_plot/ar_vs_non_ar_comparison.py
 """
 
 import argparse

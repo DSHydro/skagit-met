@@ -12,8 +12,6 @@ water years 1982-2024 (1 Oct 1981 - 30 Sep 2024; a water year runs from
 
 Summary tables are printed to the console.
 
-Converted from the former ``figures.ipynb`` notebook in this folder.
-
 Input
     analysis/outputs/5day_taking_min_and_filling/3_multi_product_bulk_bias_data.csv
 Output
