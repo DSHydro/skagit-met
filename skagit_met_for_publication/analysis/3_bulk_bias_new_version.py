@@ -68,7 +68,6 @@ OUTPUT_CSV = os.path.join(BASE_DIR, "analysis/outputs/3_multi_product_bulk_bias_
 # PATHS - external precipitation datasets (edit to your local copies)
 # ============================================================
 VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-PROJECT_DIR = "/data0/hernanqd/plots_code/skagit-met"
 
 PRISM_DIR = os.path.join(VAULT_DIR, "prism_new_hq")           # <decade>/prism_ppt_us_25m_YYYYMMDD.zip
 DAYMET_DIR = os.path.join(VAULT_DIR, "daymet_new_hq")         # prcp_YYYY_subset.nc
@@ -78,7 +77,7 @@ UCLA_DIR = os.path.join(VAULT_DIR, "ucla_era5_d02_daily")     # prec/prec.daily.
 UCLA_GEO_FILE = os.path.join(UCLA_DIR, "static/wrfinput_d02_coord.nc")
 GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")              # YYYY_daily_4km_gridMET_data.zarr
 GRIDMET_GRID_FILE = os.path.join(GRIDMET_DIR, "2021_daily_4km_gridMET_data.zarr")
-CONUS404_ZARR = os.path.join(PROJECT_DIR, "data/weather_data/conus404_skagit_precip_daily_full.zarr")
+CONUS404_ZARR = os.path.join(VAULT_DIR, "conus404_daily/conus404_skagit_precip_daily_full.zarr")  # from downloaders/conus404_daily_downloader.py
 
 # ============================================================
 # SETTINGS

@@ -18,9 +18,8 @@ Columns
 
 The top 50 events of each type are those with the largest PRISM 3-day total
 (``prism_3d_tot``: event day and the previous 2 days) over the whole record
-of the row's events CSV (Jan 1981 - Dec 2024); this selection was previously
-done in comparison.ipynb. The daily PRISM values of the selected
-events are cached in panel_data_row_<row>_<ar|non_ar>_prism.csv; a cache is
+of the row's events CSV (Jan 1981 - Dec 2024). The daily PRISM values of the
+selected events are cached in panel_data_row_<row>_<ar|non_ar>_prism.csv; a cache is
 reused only while it holds exactly the selected events, otherwise it is
 rebuilt from the PRISM files.
 
@@ -77,7 +76,7 @@ DISCHARGE_WINDOW_DAYS = (-3, 8)
 # used for column 3 only. The top-N selection (columns 1-2) uses the whole record.
 WY_START, WY_END = 1982, 2024
 
-# Event selection (formerly comparison.ipynb): for each row, the TOP_N AR events
+# Event selection: for each row, the TOP_N AR events
 # (ar_scale > 0) and the TOP_N non-AR events (ar_scale == 0) of that row's events
 # CSV, ranked by RANK_COLUMN (PRISM 3-day total: event day and the previous 2 days).
 TOP_N = 50

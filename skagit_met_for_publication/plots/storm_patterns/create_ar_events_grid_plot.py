@@ -48,7 +48,7 @@ DISCHARGE_PATH = BASE_DIR / "data/usgs_12200500_discharge.rdb"
 VAULT_DIR = Path("/data0/skagit_met/data_transfer/data")
 conus_data_path = VAULT_DIR / "CONUS_hourly/hourly_ar_non_ar_events"
 ucla_data_path = VAULT_DIR / "ucla_era5_d02_hourly/hourly_ar_non_ar_events"
-ucla_coords_file = Path("/data0/hernanqd/instance_2021_data/preparing_datasets/UCLA/wrfinput_d02_coord.nc")
+ucla_coords_file = VAULT_DIR / "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc"  # UCLA d02 grid coordinates
 PNNL_DIR = VAULT_DIR / "PNNL/historical"                  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
 pnnl_grid_file = PNNL_DIR / "SERDP6km.geo_em.d01.nc"
 

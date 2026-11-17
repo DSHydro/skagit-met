@@ -8,7 +8,7 @@ Source:
     (the zarr behind HyTEST intake catalog entry conus404-catalog:conus404-daily-osn).
     No login or extra packages (intake / s3fs) are needed.
 
-Output (Zarr v2):  data/weather_data/conus404_skagit_precip_daily_full.zarr
+Output (Zarr v2):  <VAULT_DIR>/conus404_daily/conus404_skagit_precip_daily_full.zarr
     precip_daily        (time, y, x)  daily precipitation on the full native CONUS404 grid, mm
     precip_basin_daily  (time)        mean over the SkagitBoundary.json basin, mm
     basin_mask          (y, x)        1 inside SkagitBoundary.json, 0 outside
@@ -50,7 +50,8 @@ SOURCE_LABEL = "intake:conus404-catalog:conus404-daily-osn"  # same label as the
 PRECIP_VAR = "PREC_ACC_NC"    # daily (24-hour) accumulated precipitation, mm
 BASE_DIR = Path(__file__).resolve().parents[1]  # skagit_met_for_publication/
 DEFAULT_BOUNDARY = BASE_DIR / "data" / "GIS" / "SkagitBoundary.json"
-DEFAULT_OUTPUT = BASE_DIR / "data" / "weather_data" / "conus404_skagit_precip_daily_full.zarr"
+VAULT_DIR = Path("/data0/skagit_met/data_transfer/data")  # shared folder with all downloaded products
+DEFAULT_OUTPUT = VAULT_DIR / "conus404_daily" / "conus404_skagit_precip_daily_full.zarr"
 DEFAULT_START = 1981
 DEFAULT_END = 2024  # CONUS404 daily currently ends 2024-09-30
 
@@ -69,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     "--output",
     type=Path,
     default=DEFAULT_OUTPUT,
-    help="Output Zarr path (default: <publication>/data/weather_data/conus404_skagit_precip_daily_full.zarr).",
+    help="Output Zarr path (default: <VAULT_DIR>/conus404_daily/conus404_skagit_precip_daily_full.zarr).",
   )
   parser.add_argument(
     "--startYear",

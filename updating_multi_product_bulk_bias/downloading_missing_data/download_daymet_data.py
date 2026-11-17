@@ -40,9 +40,8 @@ OUTPUT_DIR = "/data0/skagit_met/data_transfer/data/daymet_new_hq"
 # ============================================================================
 BASE_URL = "https://data.ornldaac.earthdata.nasa.gov/protected/daymet/Daymet_Daily_V4R1/data"
 
-# Earthdata credentials
-EDL_USERNAME = "hernanqd"
-EDL_PASSWORD = "Uwashington13191017."
+# Earthdata credentials are read from ~/.netrc (never stored in this script):
+#     machine urs.earthdata.nasa.gov login <username> password <password>
 
 print("="*80)
 print("DAYMET Direct Download Script with Subsetting")
@@ -95,8 +94,8 @@ downloaded = 0
 failed = 0
 failed_years = []
 
-# Set up authentication
-auth = (EDL_USERNAME, EDL_PASSWORD)
+# Session keeps the Earthdata login cookies across the redirect; requests reads ~/.netrc
+session = requests.Session()
 
 # Main loop with progress bar
 for i in tqdm(range(startyr, endyr + 1), desc="Processing years", unit="year"):
@@ -108,7 +107,7 @@ for i in tqdm(range(startyr, endyr + 1), desc="Processing years", unit="year"):
 
     try:
         # Download file with progress bar
-        response = requests.get(url, auth=auth, stream=True)
+        response = session.get(url, stream=True)
         response.raise_for_status()
 
         # Get total file size

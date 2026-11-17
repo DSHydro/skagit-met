@@ -16,7 +16,7 @@ cache to re-extract (e.g. after changing YEARS, PERCENTILES or the data).
 
 Input
     /data0/skagit_met/data_transfer/data/...   (gridded products, outside this repository)
-    data/weather_data/conus404_skagit_precip_daily_full.zarr
+    <VAULT_DIR>/conus404_daily/conus404_skagit_precip_daily_full.zarr
     data/GIS/SkagitBoundary.json, data/GIS/SkagitSubBasin_HUC8.geojson
 Output
     plots/spatial_bias_distribution/plots/spatial_percentiles_products.png
@@ -61,7 +61,7 @@ GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")  # <year>_daily_4km_gridMET_dat
 
 # Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
 BASE_DIR = Path(__file__).resolve().parents[2]
-CONUS_ZARR = BASE_DIR / "data" / "weather_data" / "conus404_skagit_precip_daily_full.zarr"
+CONUS_ZARR = Path(VAULT_DIR) / "conus404_daily" / "conus404_skagit_precip_daily_full.zarr"  # from downloaders/conus404_daily_downloader.py
 BOUNDARY_PATH = BASE_DIR / "data" / "GIS" / "SkagitBoundary.json"
 SUBBASIN_PATH = BASE_DIR / "data" / "GIS" / "SkagitSubBasin_HUC8.geojson"
 OUT_DIR = Path(__file__).resolve().parent / "plots"

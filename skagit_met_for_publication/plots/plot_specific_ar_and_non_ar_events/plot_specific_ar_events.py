@@ -18,7 +18,7 @@ Main functions:
 Input
     /data0/skagit_met/data_transfer/data/...      (gridded precipitation products)
     data/GIS/SkagitSubBasin_HUC8.geojson
-    data/weather_data/conus404_skagit_precip_daily_full.zarr
+    <VAULT_DIR>/conus404_daily/conus404_skagit_precip_daily_full.zarr
     data/usgs_12200500_discharge.rdb
     analysis/outputs/5day_taking_min_and_filling/4_clean_bias_table.csv
 Output
@@ -59,7 +59,7 @@ PRISM_DIR = os.path.join(VAULT_DIR, "prism_new_hq")  # daily TIFF zips, by decad
 DAYMET_DIR = os.path.join(VAULT_DIR, "daymet_new_hq")  # prcp_<year>_subset.nc
 PNNL_DIR = os.path.join(VAULT_DIR, "PNNL/historical")  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
 PNNL_GEO = os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc")  # PNNL grid coordinates
-CONUS_ZARR = BASE_DIR / "data" / "weather_data" / "conus404_skagit_precip_daily_full.zarr"
+CONUS_ZARR = Path(VAULT_DIR) / "conus404_daily" / "conus404_skagit_precip_daily_full.zarr"  # from downloaders/conus404_daily_downloader.py
 UCLA_PREC_DIR = os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec")  # prec.daily.era5.d02.<year>.nc
 UCLA_STATIC = os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc")  # UCLA grid coordinates
 GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")  # <year>_daily_4km_gridMET_data.zarr
