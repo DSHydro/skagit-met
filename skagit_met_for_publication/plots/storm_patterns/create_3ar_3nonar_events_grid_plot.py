@@ -36,12 +36,15 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import geopandas as gpd
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
+
+# Shared hourly loaders (common/prism_day.py)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from common import prism_day  # noqa: E402
 
 # ============================================================================
 # PATHS - project files (relative to this script)
@@ -56,15 +59,6 @@ DISCHARGE_PATH = BASE_DIR / "data/usgs_12200500_discharge.rdb"
 SNOTEL_DIR = BASE_DIR / "data/weather_data"
 SNOTEL_DOWNLOADER = BASE_DIR / "downloaders/snotel_downloader.py"
 
-# ============================================================================
-# PATHS - external model data (edit to your local copies)
-# ============================================================================
-VAULT_DIR = Path("/data0/skagit_met/data_transfer/data")
-conus_data_path = VAULT_DIR / "CONUS_hourly/hourly_ar_non_ar_events"
-ucla_data_path = VAULT_DIR / "ucla_era5_d02_hourly/hourly_ar_non_ar_events"
-ucla_coords_file = VAULT_DIR / "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc"  # UCLA d02 grid coordinates
-PNNL_DIR = VAULT_DIR / "PNNL/historical"                  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
-pnnl_grid_file = PNNL_DIR / "SERDP6km.geo_em.d01.nc"
 
 # Publication font sizes (figures are 16 in wide; expect ~0.45x reduction to journal page width)
 FONT_TITLE = 20
@@ -103,13 +97,26 @@ def load_usgs_rdb(filepath, param_name):
         print(f"  Error loading {filepath}: {e}")
         return pd.DataFrame(columns=['date', param_name])
 
-def get_pnnl_data_path(year):
-    """Get PNNL data path for a given year."""
-    pnnl_path = PNNL_DIR / str(year) / f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc"
-    if pnnl_path.exists():
-        return pnnl_path
-    else:
-        return None
+# USGS daily values are means over the local calendar day (Pacific Standard Time, UTC-8),
+# while the precipitation axis is in UTC: local day D runs from D 08:00 to D+1 08:00 UTC.
+USGS_DAY_START_UTC = pd.Timedelta(hours=8)
+
+
+def discharge_steps(df, start, end):
+    """Daily mean discharge as a step line spanning each local day, on the UTC time axis.
+
+    Returns (x, y) for ``ax.step(x, y, where='post')``, clipped to [start, end], or
+    (None, None) if no daily value overlaps the window.
+    """
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    day_start = df['date'] + USGS_DAY_START_UTC
+    d = df[(day_start + pd.Timedelta(days=1) > start) & (day_start < end)]
+    if d.empty:
+        return None, None
+    x = list((d['date'] + USGS_DAY_START_UTC).clip(lower=start)) + [end]
+    y = list(d['discharge_cms']) + [d['discharge_cms'].iloc[-1]]
+    return x, y
+
 
 def fill_missing_times(times, values):
     """Fill missing time gaps with NaN values to prevent line connections."""
@@ -210,51 +217,7 @@ def load_snotel_hourly_mean(date_start, date_end):
 # ============================================================================
 # LOAD AND PREPARE DATA
 # ============================================================================
-print("=" * 70)
-print("LOADING BOUNDARY AND MASKS")
-print("=" * 70)
 
-boundary_gdf = gpd.read_file(BOUNDARY_PATH)
-if hasattr(boundary_gdf.to_crs("EPSG:4326"), 'union_all'):
-    poly = boundary_gdf.to_crs("EPSG:4326").union_all()
-else:
-    poly = boundary_gdf.to_crs("EPSG:4326").unary_union
-print(f"Boundary loaded: {BOUNDARY_PATH}")
-
-# Load UCLA coordinates
-ucla_coords = xr.open_dataset(ucla_coords_file)
-lat2d = ucla_coords['lat2d'].values
-lon2d = ucla_coords['lon2d'].values
-print(f"UCLA coordinates loaded: lat2d shape {lat2d.shape}, lon2d shape {lon2d.shape}")
-
-# Create UCLA mask
-df_pts = pd.DataFrame({'lon': lon2d.flatten(), 'lat': lat2d.flatten()})
-gdf_pts = gpd.GeoDataFrame(
-    df_pts,
-    geometry=gpd.points_from_xy(df_pts.lon, df_pts.lat),
-    crs="EPSG:4326"
-)
-inside = gdf_pts.intersects(poly).values
-mask_ucla = inside.reshape(lon2d.shape)
-print(f"UCLA mask: {inside.sum()} cells inside watershed")
-
-# Load PNNL coordinates
-ds_pnnl_static = xr.open_dataset(pnnl_grid_file)
-pnnl_lon_full = ds_pnnl_static.XLONG_M.values[0]
-pnnl_lat_full = ds_pnnl_static.XLAT_M.values[0]
-ds_pnnl_static.close()
-print(f"PNNL coordinates loaded: shape {pnnl_lon_full.shape}")
-
-# Create PNNL mask
-df_pts = pd.DataFrame({'lon': pnnl_lon_full.flatten(), 'lat': pnnl_lat_full.flatten()})
-gdf_pts = gpd.GeoDataFrame(
-    df_pts,
-    geometry=gpd.points_from_xy(df_pts.lon, df_pts.lat),
-    crs="EPSG:4326"
-)
-inside = gdf_pts.intersects(poly).values
-mask_pnnl = inside.reshape(pnnl_lon_full.shape)
-print(f"PNNL mask: {inside.sum()} cells inside watershed")
 
 # Load discharge data
 print("\n" + "=" * 70)
@@ -292,116 +255,23 @@ non_ar_date_ranges = [
 date_ranges = ar_date_ranges + non_ar_date_ranges
 
 def load_data_for_period(date_start, date_end, date_start_ucla=None):
-    """Load CONUS, UCLA and PNNL basin-mean hourly precipitation for a given period."""
-    if date_start_ucla is None:
-        date_start_ucla = date_start - timedelta(hours=1)
+    """Basin-mean hourly precipitation [mm/h] of CONUS404, UCLA and PNNL for a period.
 
-    # CONUS
-    conus_files_list = sorted(conus_data_path.glob('*.PREC_ACC_NC.wrf2d_d01_*.nc'))
-    conus_files_in_range = []
-    for f in conus_files_list:
-        try:
-            ds_temp = xr.open_dataset(f)
-            time = ds_temp.Time.values[0]
-            if pd.Timestamp(date_start) <= pd.Timestamp(time) <= pd.Timestamp(date_end):
-                conus_files_in_range.append(f)
-            ds_temp.close()
-        except:
-            pass
-
-    spatial_mean_conus = None
-    times_conus = None
-    if conus_files_in_range:
-        ds_conus_list = [xr.open_dataset(f) for f in conus_files_in_range]
-        ds_conus = xr.concat(ds_conus_list, dim='Time')
-
-        # Create CONUS mask for this period
-        df_pts = pd.DataFrame({'lon': ds_conus.XLONG.values.flatten(),
-                               'lat': ds_conus.XLAT.values.flatten()})
-        gdf_pts = gpd.GeoDataFrame(
-            df_pts,
-            geometry=gpd.points_from_xy(df_pts.lon, df_pts.lat),
-            crs="EPSG:4326"
-        )
-        inside = gdf_pts.intersects(poly).values
-        mask_conus_local = inside.reshape(ds_conus.XLONG.values.shape)
-
-        mask_da_conus = xr.DataArray(mask_conus_local, dims=['south_north', 'west_east'])
-        data_masked_conus = ds_conus['PREC_ACC_NC'].where(mask_da_conus)
-        spatial_mean_conus = data_masked_conus.mean(dim=['south_north', 'west_east'], skipna=True).values
-        times_conus = pd.to_datetime(ds_conus.Time.values)
-
-    # UCLA
-    current = date_start_ucla
-    ucla_filenames = []
-    while current <= date_end:
-        fn = f"auxhist_d01_{current.strftime('%Y-%m-%d_%H:%M:%S')}.nc"
-        ucla_filenames.append(ucla_data_path / fn)
-        current += timedelta(hours=1)
-
-    spatial_mean_ucla = None
-    times_ucla = None
-    ucla_files_exist = [f for f in ucla_filenames if f.exists()]
-    if ucla_files_exist:
-        ds_ucla = xr.open_mfdataset(ucla_files_exist, concat_dim='Time', combine='nested')
-
-        # Create UCLA mask for this period (using the actual data coordinates)
-        df_pts = pd.DataFrame({'lon': lon2d.flatten(), 'lat': lat2d.flatten()})
-        gdf_pts = gpd.GeoDataFrame(
-            df_pts,
-            geometry=gpd.points_from_xy(df_pts.lon, df_pts.lat),
-            crs="EPSG:4326"
-        )
-        inside = gdf_pts.intersects(poly).values
-        mask_ucla_local = inside.reshape(lon2d.shape)
-
-        mask_da_ucla = xr.DataArray(mask_ucla_local, dims=['south_north', 'west_east'])
-        ds_ucla_rain = ds_ucla[['RAINC', 'RAINNC']]
-        ds_masked_ucla = ds_ucla_rain.where(mask_da_ucla)
-        total_rain_ucla = ds_masked_ucla['RAINC'] + ds_masked_ucla['RAINNC']
-        total_increments_ucla = total_rain_ucla.diff(dim='Time')
-        spatial_mean_ucla = total_increments_ucla.mean(dim=['south_north', 'west_east'], skipna=True).values
-        times_raw_ucla = ds_ucla['Times'].values
-        times_ucla = []
-        for t in times_raw_ucla[1:]:
-            if isinstance(t, bytes):
-                t_str = t.decode().replace('_', ' ')
-            else:
-                t_str = str(t).replace('_', ' ')
-            times_ucla.append(pd.Timestamp(t_str))
-        times_ucla = np.array(times_ucla)
-
-    # PNNL - one file per year; read both years if the event crosses New Year
-    spatial_mean_pnnl = None
-    times_pnnl = None
-    pnnl_data_paths = [get_pnnl_data_path(year) for year in range(date_start.year, date_end.year + 1)]
-    pnnl_data_paths = [p for p in pnnl_data_paths if p is not None]
-
-    if pnnl_data_paths:
-        if len(pnnl_data_paths) == 1:
-            ds_pnnl_full_period = xr.open_dataset(pnnl_data_paths[0])
-        else:
-            ds_pnnl_full_period = xr.concat([xr.open_dataset(p) for p in pnnl_data_paths], dim='time')
-        date_start_pd = pd.Timestamp(date_start)
-        date_end_pd = pd.Timestamp(date_end)
-        ds_pnnl_subset = ds_pnnl_full_period.sel(time=slice(date_start_pd, date_end_pd))
-
-        if len(ds_pnnl_subset.time) > 0:
-            # Create PNNL mask (using pre-computed coordinates)
-            df_pts = pd.DataFrame({'lon': pnnl_lon_full.flatten(), 'lat': pnnl_lat_full.flatten()})
-            gdf_pts = gpd.GeoDataFrame(
-                df_pts,
-                geometry=gpd.points_from_xy(df_pts.lon, df_pts.lat),
-                crs="EPSG:4326"
-            )
-            inside = gdf_pts.intersects(poly).values
-            mask_pnnl_local = inside.reshape(pnnl_lon_full.shape)
-
-            data_masked_pnnl = ds_pnnl_subset['PREC_ACC_NC'].where(mask_pnnl_local)
-            spatial_mean_pnnl = data_masked_pnnl.mean(dim=['x', 'y'], skipna=True).values
-            times_pnnl = pd.to_datetime(ds_pnnl_subset.time.values)
-
-    return spatial_mean_conus, times_conus, spatial_mean_ucla, times_ucla, spatial_mean_pnnl, times_pnnl
+    Hourly data come from common/prism_day.load_hourly: every value is the precipitation
+    of the hour ending at its UTC stamp, for all three products. The basin mean is taken
+    over the cells whose centre is inside SkagitBoundary.json. ``date_start_ucla`` is
+    accepted for compatibility and not used (load_hourly reads the extra UCLA hour itself).
+    Returns (conus, times_conus, ucla, times_ucla, pnnl, times_pnnl); None where no data.
+    """
+    out = []
+    for product in ("conus", "ucla", "pnnl"):
+        da = prism_day.load_hourly(product, date_start, date_end)
+        if da is None:
+            out += [None, None]
+            continue
+        series = prism_day.basin_mean(da, prism_day.boundary_mask(da))
+        out += [series.values, series.index.values]
+    return tuple(out)
 
 # ============================================================================
 # 3x2 GRID OF HOURLY PLOTS
@@ -463,11 +333,9 @@ for idx, (ax, (date_start_ucla, date_start, date_end, event_date, ar_category)) 
 
     # Secondary y-axis for discharge
     ax2 = ax.twinx()
-    date_end_plus_1h = date_end + timedelta(hours=1)
-    df_discharge_period = df_discharge_all[(df_discharge_all['date'] >= date_start) &
-                                            (df_discharge_all['date'] <= date_end_plus_1h)]
-    if not df_discharge_period.empty:
-        ax2.plot(df_discharge_period['date'], df_discharge_period['discharge_cms'],
+    q_x, q_y = discharge_steps(df_discharge_all, date_start, date_end + timedelta(hours=1))
+    if q_x is not None:
+        ax2.step(q_x, q_y, where='post',
                  linewidth=2.5, color=DISCHARGE_COLOR, label='USGS Discharge', alpha=0.7)
     ax2.tick_params(axis='y', labelcolor=DISCHARGE_COLOR, labelsize=GRID_FONT_TICK)
     precip_axes.append(ax)
