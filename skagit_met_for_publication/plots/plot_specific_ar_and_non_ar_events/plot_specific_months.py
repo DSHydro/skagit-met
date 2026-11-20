@@ -29,44 +29,31 @@ Usage
 """
 
 import os
-import tempfile
-import zipfile
+import sys
 from pathlib import Path
 
-import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import regionmask
-import rioxarray
-import xarray as xr
 
-# Shared raw-data archive (outside this repository)
-VAULT_DIR = "/data0/skagit_met/data_transfer/data"
+# Shared daily loaders (common/prism_day.py)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from common import prism_day  # noqa: E402
 
 # Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
 BASE_DIR = Path(__file__).resolve().parents[2]
-HUC8_GEO = BASE_DIR / "data" / "GIS" / "SkagitSubBasin_HUC8.geojson"
 EVENTS_CSV = BASE_DIR / "analysis" / "outputs" / "5day_taking_min_and_filling" / "4_clean_bias_table.csv"
 HYDRO_Q_PATH = BASE_DIR / "data" / "usgs_12200500_discharge.rdb"
 OUTPUT_DIR = Path(__file__).resolve().parent
-
-# Precipitation product locations
-PRISM_DIR = os.path.join(VAULT_DIR, "prism_new_hq")  # daily TIFF zips, by decade folder
-DAYMET_DIR = os.path.join(VAULT_DIR, "daymet_new_hq")  # prcp_<year>_subset.nc
-PNNL_DIR = os.path.join(VAULT_DIR, "PNNL/historical")  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
-PNNL_GEO = os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc")  # PNNL grid coordinates
-CONUS_ZARR = Path(VAULT_DIR) / "conus404_daily" / "conus404_skagit_precip_daily_full.zarr"  # from downloaders/conus404_daily_downloader.py
-UCLA_PREC_DIR = os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec")  # prec.daily.era5.d02.<year>.nc
-UCLA_STATIC = os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc")  # UCLA grid coordinates
-GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")  # <year>_daily_4km_gridMET_data.zarr
-GRIDMET_SAMPLE = os.path.join(GRIDMET_DIR, "2021_daily_4km_gridMET_data.zarr")  # used only for its grid
 
 # Products, in plotting order, with their line colors and markers
 PRODUCTS = ['prism', 'pnnl', 'daymet', 'conus', 'ucla', 'gridmet']
 PRODUCT_COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
 PRODUCT_MARKERS = ['o', 's', '^', 'D', 'v', 'p']
-PNNL_LAST_YEAR = 2020  # PNNL historical run ends in 2020
+
+# Day alignment of the products (GitHub issue #61): True = all products on the PRISM
+# day (12 UTC on D-1 to 12 UTC on D); False = each product's own date labels (as before)
+ALIGN = True
 
 # Default event window when no date range is given: T-3 to T+5 days
 WINDOW_DAYS_BEFORE = 3
@@ -99,47 +86,6 @@ FONT_LEGEND = 12
 FONT_AR_SCALE = 14  # AR scale numbers above the dashed lines
 
 
-def load_prism_from_new_format(date, prism_root):
-    """Load PRISM data from new format (TIFF) zip file for a specific date"""
-    date_str = date.strftime('%Y%m%d')
-    year = date.year
-    decade_folder = get_decade_folder(year)
-    zip_path = os.path.join(prism_root, decade_folder, f"prism_ppt_us_25m_{date_str}.zip")
-
-    if not os.path.exists(zip_path):
-        return None
-
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(zip_path, 'r') as z:
-                z.extractall(tmpdir)
-                for root, dirs, files in os.walk(tmpdir):
-                    for f in files:
-                        if f.endswith('.tif'):
-                            filepath = os.path.join(root, f)
-                            da = rioxarray.open_rasterio(filepath)
-                            return da.squeeze().copy(deep=True)
-    except Exception:
-        pass
-
-    return None
-
-
-def load_daymet_from_netcdf(year):
-    """Load Daymet data from netCDF file for a specific year"""
-    daymet_nc_path = os.path.join(DAYMET_DIR, f"prcp_{year}_subset.nc")
-
-    if not os.path.exists(daymet_nc_path):
-        return None
-
-    try:
-        ds = xr.open_dataset(daymet_nc_path)
-        return ds
-    except Exception as e:
-        print(f"  Error loading Daymet netCDF for {year}: {e}")
-        return None
-
-
 def load_usgs_rdb(filepath, param_name):
     """Load USGS RDB file"""
     try:
@@ -158,276 +104,39 @@ def load_usgs_rdb(filepath, param_name):
         return pd.DataFrame(columns=['date', param_name])
 
 
-def load_regions():
-    gdf = gpd.read_file(HUC8_GEO).to_crs("EPSG:4326")
-    return gdf
-
-
-def get_mask(gdf, lon, lat):
-    mask = regionmask.mask_3D_geopandas(gdf, lon, lat)
-    region_indices = []
-    for r in ["Upper Skagit", "Sauk", "Lower Skagit"]:
-        idx = gdf[gdf["Name"].str.contains(r, case=False)].index[0]
-        region_indices.append(idx)
-    return mask.sel(region=region_indices)
-
-
-def calculate_basin_mean(da, mask_2d):
-    data = da.values
-    mask = mask_2d.values if hasattr(mask_2d, 'values') else mask_2d
-
-    if data.ndim == 3:
-        time_steps = data.shape[0]
-        data_flat = data.reshape(time_steps, -1)
-        mask_flat = mask.flatten()
-        mask_idx = mask_flat > 0
-        if mask_idx.any():
-            mean_vals = np.nanmean(data_flat[:, mask_idx], axis=1)
-        else:
-            mean_vals = np.full(time_steps, np.nan)
-        time_coord = da.time.values if 'time' in da.coords else range(time_steps)
-        return pd.Series(mean_vals, index=pd.to_datetime(time_coord))
-    elif data.ndim == 2:
-        # Mask out nodata values (typically -9999 or negative values for TIFF)
-        data = data.astype(float)
-        data[data < 0] = np.nan  # Treat negative values as nodata
-
-        data_flat = data.flatten()
-        mask_flat = mask.flatten()
-        mask_idx = mask_flat > 0
-        if mask_idx.any():
-            mean_val = np.nanmean(data_flat[mask_idx])
-        else:
-            mean_val = np.nan
-        return mean_val
-    else:
-        raise ValueError(f"Unexpected data dimensions: {data.ndim}")
-
-
-def get_decade_folder(year: int) -> str:
-    if 2021 <= year <= 2024:
-        return "2021-2024"
-    start_decade = (year // 10) * 10
-    if start_decade == 1980 and year > 1980:
-        return "1981-1990"
-    if year % 10 == 0 and year > 1980:
-        return f"{start_decade-9}-{start_decade}"
-    if start_decade % 10 == 0:
-        return f"{start_decade+1}-{start_decade+10}"
-    return f"{start_decade}-{(year//10)*10+9}"
-
-
 def extract_event_window(event_date, products_to_extract=PRODUCTS, start_date=None, end_date=None):
-    """Extract daily basin-mean precipitation for each product.
+    """Daily basin-mean precipitation around an event for each product.
 
-    ``start_date``/``end_date`` give the date range (here, a whole month);
-    without them a 9-day window (T-3 to T+5) around ``event_date`` is used.
-    ``event_date`` also sets the year of the files that are read. Returns a
-    DataFrame indexed by date string with one column per product.
+    The default window is 9 days (T-3 to T+5); ``start_date``/``end_date`` give a
+    custom range instead. Gridded products come from common/prism_day.py and are
+    averaged over the HUC8 sub-basin mask (Upper Skagit, Sauk, Lower Skagit).
+    Returns a DataFrame indexed by date string with one column per product.
     """
-
     if start_date and end_date:
         # Custom date range
-        start_dt = pd.Timestamp(start_date)
-        end_dt = pd.Timestamp(end_date)
-        window_dates = pd.date_range(start_dt, end_dt, freq='D').tolist()
+        window_dates = pd.date_range(pd.Timestamp(start_date), pd.Timestamp(end_date), freq='D').tolist()
     else:
         # Default window (T-3 to T+5)
-        window_dates = []
-        for i in range(-WINDOW_DAYS_BEFORE, WINDOW_DAYS_AFTER + 1):
-            window_dates.append(event_date + pd.Timedelta(days=i))
+        window_dates = [event_date + pd.Timedelta(days=i)
+                        for i in range(-WINDOW_DAYS_BEFORE, WINDOW_DAYS_AFTER + 1)]
 
-    year = event_date.year
     results = {f'{date.strftime("%Y-%m-%d")}': {} for date in window_dates}
 
-    gdf = load_regions()
-    masks_2d = {}
-
-    # Basin masks on each product's grid. PRISM and Daymet masks are built
-    # later from the coordinates of the data actually loaded.
-    try:
-        sample_geo = xr.open_dataset(PNNL_GEO)
-        masks_2d['PNNL'] = get_mask(gdf, sample_geo.XLONG_M.values[0], sample_geo.XLAT_M.values[0]).any(dim='region')
-    except Exception:
-        pass
-
-    try:
-        sample_conus = xr.open_zarr(CONUS_ZARR)
-        masks_2d['CONUS404'] = get_mask(gdf, sample_conus.lon, sample_conus.lat).any(dim='region')
-        sample_conus.close()
-    except Exception:
-        pass
-
-    try:
-        ucla_static = xr.open_dataset(UCLA_STATIC)
-        masks_2d['UCLA'] = get_mask(gdf, ucla_static.lon2d.values, ucla_static.lat2d.values).any(dim='region')
-    except Exception:
-        pass
-
-    try:
-        sample_gridmet = xr.open_zarr(GRIDMET_SAMPLE)
-        masks_2d['GridMET'] = get_mask(gdf, sample_gridmet.lon, sample_gridmet.lat).any(dim='region')
-    except Exception:
-        pass
-
-    # Extract PRISM from new format (TIFF)
-    if 'prism' in products_to_extract:
-        prism_data = {}
-
-        for date in window_dates:
-            try:
-                da = load_prism_from_new_format(date, PRISM_DIR)
-                if da is None:
-                    continue
-                lon = da.x.values
-                lat = da.y.values
-                m_prism = get_mask(gdf, lon, lat).any(dim='region')
-                mean_val = calculate_basin_mean(da, m_prism)
-                prism_data[date.normalize()] = mean_val
-            except Exception:
-                pass
-
-        # Add extracted values to results
-        for date in window_dates:
-            normalized_date = date.normalize()
-            if normalized_date in prism_data:
-                results[f'{date.strftime("%Y-%m-%d")}']['prism'] = float(prism_data[normalized_date])
-
-        # Debug: Print what was found
-        prism_count = sum(1 for d in prism_data.values() if not np.isnan(d))
-        if prism_count > 0:
-            print(f"  ✓ PRISM: {prism_count}/{len(window_dates)} dates extracted")
-
-    # Extract PNNL (hourly, summed to daily)
-    if 'pnnl' in products_to_extract and year <= PNNL_LAST_YEAR:
-        try:
-            pnnl_path = os.path.join(PNNL_DIR, str(year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc")
-            if os.path.exists(pnnl_path):
-                ds = xr.open_dataset(pnnl_path)
-                hourly_dates = []
-                for d in window_dates:
-                    hourly_dates.extend(pd.date_range(d, d + pd.Timedelta(hours=23), freq='h'))
-                available_hourly = [d for d in hourly_dates if d in ds.time.values]
-                if available_hourly and 'PNNL' in masks_2d:
-                    da_subset = ds['PREC_ACC_NC'].sel(time=available_hourly)
-                    s_hourly = calculate_basin_mean(da_subset, masks_2d['PNNL'])
-                    pnnl_daily = s_hourly.resample('1D').sum()
-                    pnnl_daily.index = pnnl_daily.index.normalize()
-                    for date in window_dates:
-                        normalized_date = date.normalize()
-                        if normalized_date in pnnl_daily.index:
-                            val = pnnl_daily[normalized_date]
-                            results[f'{date.strftime("%Y-%m-%d")}']['pnnl'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
-                ds.close()
-        except Exception as e:
-            print(f"Error loading PNNL for {event_date.strftime('%Y-%m-%d')}: {e}")
-
-    # Extract Daymet (new format - netCDF files)
-    if 'daymet' in products_to_extract:
-        try:
-            ds = load_daymet_from_netcdf(year)
-            if ds is not None:
-                ds['time'] = pd.to_datetime(ds.time.values).normalize()
-                da = ds['prcp']
-
-                # Create Daymet mask dynamically if not cached
-                if 'Daymet' not in masks_2d:
-                    lon_2d = ds['lon'].values
-                    lat_2d = ds['lat'].values
-                    masks_2d['Daymet'] = get_mask(gdf, lon_2d, lat_2d).any(dim='region')
-
-                da_window = da.sel(time=window_dates, method='nearest')
-                daymet_daily = calculate_basin_mean(da_window, masks_2d['Daymet'])
-                daymet_daily.index = daymet_daily.index.normalize()
-                daymet_daily = daymet_daily[~daymet_daily.index.duplicated(keep='first')]
-                for date in window_dates:
-                    normalized_date = date.normalize()
-                    if normalized_date in daymet_daily.index:
-                        val = daymet_daily[normalized_date]
-                        results[f'{date.strftime("%Y-%m-%d")}']['daymet'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
-                ds.close()
-        except Exception as e:
-            print(f"Error loading Daymet for {event_date.strftime('%Y-%m-%d')}: {e}")
-
-    # Extract CONUS404
-    if 'conus' in products_to_extract:
-        try:
-            if os.path.exists(CONUS_ZARR):
-                ds = xr.open_zarr(CONUS_ZARR)
-                ds['time'] = pd.to_datetime(ds.time.values).normalize()
-                da = ds['precip_daily'].sel(time=window_dates, method='nearest')
-                if 'CONUS404' in masks_2d:
-                    conus_daily = calculate_basin_mean(da, masks_2d['CONUS404'])
-                    conus_daily.index = conus_daily.index.normalize()
-                    conus_daily = conus_daily[~conus_daily.index.duplicated(keep='first')]
-                    for date in window_dates:
-                        normalized_date = date.normalize()
-                        if normalized_date in conus_daily.index:
-                            val = conus_daily[normalized_date]
-                            results[f'{date.strftime("%Y-%m-%d")}']['conus'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
-                ds.close()
-        except Exception as e:
-            print(f"Error loading CONUS404 for {event_date.strftime('%Y-%m-%d')}: {e}")
-
-    # Extract UCLA
-    if 'ucla' in products_to_extract:
-        try:
-            u_paths = [
-                os.path.join(UCLA_PREC_DIR, f"prec.daily.era5.d02.{year-1}.nc"),
-                os.path.join(UCLA_PREC_DIR, f"prec.daily.era5.d02.{year}.nc")
-            ]
-            series_list = []
-            for p in u_paths:
-                if os.path.exists(p):
-                    try:
-                        ds = xr.open_dataset(p)
-                        u_var = "prec" if "prec" in ds.data_vars else "pr"
-                        if 'day' in ds.dims:
-                            ds = ds.rename({'day': 'time'})
-                        ds['time'] = pd.to_datetime(ds.time.values).normalize()
-                        available_dates = [d for d in window_dates if d in ds.time.values]
-                        if available_dates and 'UCLA' in masks_2d:
-                            da_subset = ds[u_var].sel(time=available_dates)
-                            s = calculate_basin_mean(da_subset, masks_2d['UCLA'])
-                            s.index = s.index.normalize()
-                            series_list.append(s)
-                        ds.close()
-                    except Exception:
-                        pass
-            if series_list:
-                ucla_daily = pd.concat(series_list).sort_index()
-                ucla_daily = ucla_daily[~ucla_daily.index.duplicated(keep='first')]
-                for date in window_dates:
-                    normalized_date = date.normalize()
-                    if normalized_date in ucla_daily.index:
-                        val = ucla_daily[normalized_date]
-                        results[f'{date.strftime("%Y-%m-%d")}']['ucla'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
-        except Exception as e:
-            print(f"Error loading UCLA for {event_date.strftime('%Y-%m-%d')}: {e}")
-
-    # Extract GridMET
-    if 'gridmet' in products_to_extract:
-        try:
-            gridmet_path = os.path.join(GRIDMET_DIR, f"{year}_daily_4km_gridMET_data.zarr")
-            if os.path.exists(gridmet_path):
-                ds = xr.open_zarr(gridmet_path)
-                if 'day' in ds.dims:
-                    ds = ds.rename({'day': 'time'})
-                ds['time'] = pd.to_datetime(ds.time.values).normalize()
-                var = 'prcp' if 'prcp' in ds.data_vars else 'precipitation_amount'
-                da = ds[var].sel(time=window_dates, method='nearest')
-                if 'GridMET' in masks_2d:
-                    gridmet_daily = calculate_basin_mean(da, masks_2d['GridMET'])
-                    gridmet_daily.index = gridmet_daily.index.normalize()
-                    gridmet_daily = gridmet_daily[~gridmet_daily.index.duplicated(keep='first')]
-                    for date in window_dates:
-                        normalized_date = date.normalize()
-                        if normalized_date in gridmet_daily.index:
-                            val = gridmet_daily[normalized_date]
-                            results[f'{date.strftime("%Y-%m-%d")}']['gridmet'] = float(val) if not isinstance(val, pd.Series) else float(val.iloc[0])
-                ds.close()
-        except Exception as e:
-            print(f"Error loading GridMET for {event_date.strftime('%Y-%m-%d')}: {e}")
+    # Gridded products: daily basin means from the shared loader (common/prism_day.py),
+    # on the PRISM day when ALIGN is True, on each product's own date labels otherwise.
+    for product in products_to_extract:
+        if product == 'snotel':
+            continue
+        da = prism_day.load_daily(product, window_dates, align=ALIGN)
+        if da is None:
+            print(f"  [WARN] {product}: no data for this window")
+            continue
+        daily = prism_day.basin_mean(da, prism_day.basin_mask(da))
+        for date, val in daily.items():
+            key = date.strftime("%Y-%m-%d")
+            if key in results:
+                results[key][product] = float(val)
+        print(f"  {product}: {int(daily.notna().sum())}/{len(window_dates)} days")
 
     return pd.DataFrame(results).T
 

@@ -14,14 +14,17 @@ The yearly extraction is slow (39 years, run in parallel), so its result is
 cached in plots/percentiles_cache.pkl and reused on later runs. Delete the
 cache to re-extract (e.g. after changing YEARS, PERCENTILES or the data).
 
+Daily data come from common/prism_day.py; with ALIGN = True all products are on the
+PRISM day (12 UTC on D-1 to 12 UTC on D, GitHub issue #61). The cache file name
+includes the alignment, so aligned and unaligned runs never share a cache.
+
 Input
-    /data0/skagit_met/data_transfer/data/...   (gridded products, outside this repository)
-    <VAULT_DIR>/conus404_daily/conus404_skagit_precip_daily_full.zarr
+    Precipitation datasets - see the paths in common/prism_day.py
     data/GIS/SkagitBoundary.json, data/GIS/SkagitSubBasin_HUC8.geojson
 Output
     plots/spatial_bias_distribution/plots/spatial_percentiles_products.png
     plots/spatial_bias_distribution/plots/spatial_percentiles_biases.png
-    plots/spatial_bias_distribution/plots/percentiles_cache.pkl   (cache)
+    plots/spatial_bias_distribution/plots/percentiles_cache[_prism_day].pkl   (cache; _prism_day when ALIGN)
 
 Usage
     python plot_spatial_percentiles.py
@@ -29,9 +32,8 @@ Usage
 
 import os
 import pickle
-import tempfile
+import sys
 import warnings
-import zipfile
 from pathlib import Path
 
 import cartopy.crs as ccrs
@@ -40,36 +42,39 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import rioxarray
 import xarray as xr
 from joblib import Parallel, delayed
 from scipy.interpolate import griddata
+
+# Shared daily loaders (common/prism_day.py); PYTHONPATH also reaches the parallel workers
+_REPO_DIR = str(Path(__file__).resolve().parents[2])
+sys.path.insert(0, _REPO_DIR)
+os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [_REPO_DIR, os.environ.get("PYTHONPATH")]))
+from common import prism_day  # noqa: E402
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
 # --- Configuration & Paths ---
-# Shared raw-data archive (outside this repository)
-VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-PRISM_ROOT = os.path.join(VAULT_DIR, "prism_new_hq")
-DAYMET_ROOT = os.path.join(VAULT_DIR, "daymet_new_hq")
-PNNL_GEO = os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc")  # PNNL grid coordinates
-PNNL_DIR = os.path.join(VAULT_DIR, "PNNL/historical")  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
-UCLA_STATIC = os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc")  # UCLA grid coordinates
-UCLA_PREC_DIR = os.path.join(VAULT_DIR, "ucla_era5_d02_daily", "prec")  # prec.daily.era5.d02.<year>.nc
-GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")  # <year>_daily_4km_gridMET_data.zarr
 
 # Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
 BASE_DIR = Path(__file__).resolve().parents[2]
-CONUS_ZARR = Path(VAULT_DIR) / "conus404_daily" / "conus404_skagit_precip_daily_full.zarr"  # from downloaders/conus404_daily_downloader.py
 BOUNDARY_PATH = BASE_DIR / "data" / "GIS" / "SkagitBoundary.json"
 SUBBASIN_PATH = BASE_DIR / "data" / "GIS" / "SkagitSubBasin_HUC8.geojson"
 OUT_DIR = Path(__file__).resolve().parent / "plots"
 
+# Day alignment of the products (GitHub issue #61): True = all products on the PRISM
+# day (12 UTC on D-1 to 12 UTC on D); False = each product's own date labels
+ALIGN = True
+
+# Product names used here -> names in common/prism_day.py
+PRODUCT_KEYS = {'PRISM': 'prism', 'Daymet': 'daymet', 'PNNL': 'pnnl',
+                'CONUS404': 'conus', 'UCLA': 'ucla', 'GridMET': 'gridmet'}
+
 # Output paths
 OUT_PRODUCTS_IMG = OUT_DIR / "spatial_percentiles_products.png"
 OUT_BIASES_IMG = OUT_DIR / "spatial_percentiles_biases.png"
-CACHE_PATH = OUT_DIR / "percentiles_cache.pkl"
+CACHE_PATH = OUT_DIR / f"percentiles_cache{'_prism_day' if ALIGN else ''}.pkl"
 
 # Analysis settings
 YEARS = range(1981, 2020)  # calendar years 1981-2019
@@ -98,82 +103,14 @@ FONT_ROW_LABEL = 20
 FONT_CBAR_LABEL = 18
 FONT_CBAR_TICK = 16
 
-def get_decade_folder(year: int) -> str:
-    if 2021 <= year <= 2024:
-        return "2021-2024"
-    start_decade = (year // 10) * 10
-    if start_decade == 1980 and year > 1980:
-        return "1981-1990"
-    if year % 10 == 0 and year > 1980:
-        return f"{start_decade-9}-{start_decade}"
-    if start_decade % 10 == 0:
-        return f"{start_decade+1}-{start_decade+10}"
-    return f"{start_decade}-{(year//10)*10+9}"
-
-def load_prism_day(date, prism_root):
-    """Load a single day of PRISM precipitation from TIFF/zip source."""
-    date_str = date.strftime('%Y%m%d')
-    year = date.year
-    decade_folder = get_decade_folder(year)
-    zip_path = os.path.join(prism_root, decade_folder, f"prism_ppt_us_25m_{date_str}.zip")
-
-    if not os.path.exists(zip_path):
-        return None
-
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(zip_path, 'r') as z:
-                z.extractall(tmpdir)
-                for root, dirs, files in os.walk(tmpdir):
-                    for f in files:
-                        if f.endswith('.tif'):
-                            filepath = os.path.join(root, f)
-                            da = rioxarray.open_rasterio(filepath)
-                            da = da.squeeze().copy(deep=True)
-                            da = da.rename({'x': 'lon', 'y': 'lat'})
-                            da.load()
-                            return da
-    except Exception as e:
-        print(f"  Error loading PRISM for {date_str}: {e}")
-
-    return None
-
-def load_daymet_from_netcdf(year, daymet_root):
-    """Load Daymet data from netCDF source for a specific year."""
-    daymet_nc_path = os.path.join(daymet_root, f"prcp_{year}_subset.nc")
-
-    if not os.path.exists(daymet_nc_path):
-        return None
-
-    try:
-        return xr.open_dataset(daymet_nc_path)
-    except Exception as e:
-        print(f"  Error loading Daymet netCDF for {year}: {e}")
-        return None
-
-# Load static coordinates globally to avoid repeated opening in workers
-print("Loading static grid coordinates...")
-
-# Load PRISM reference grid (new TIFF/zip source)
+# Reference grid: PRISM 4 km (cropped to BB in main)
+print("Loading reference grid...")
 prism_sample_date = pd.Timestamp("2020-01-01")
-da_prism_sample = load_prism_day(prism_sample_date, PRISM_ROOT)
-if da_prism_sample is not None:
-    prism_lon_full = da_prism_sample['lon'].values
-    prism_lat_full = da_prism_sample['lat'].values
-else:
+da_prism_sample = prism_day.load_prism_day(prism_sample_date)
+if da_prism_sample is None:
     raise FileNotFoundError(f"Could not find PRISM data for reference date {prism_sample_date.date()}")
-
-# PNNL (still needed for loading PNNL data)
-ds_pnnl_static = xr.open_dataset(PNNL_GEO)
-pnnl_lon = ds_pnnl_static.XLONG_M.values[0]
-pnnl_lat = ds_pnnl_static.XLAT_M.values[0]
-ds_pnnl_static.close()
-
-# UCLA
-ds_ucla_static = xr.open_dataset(UCLA_STATIC)
-ucla_lon = ds_ucla_static.lon2d.values
-ucla_lat = ds_ucla_static.lat2d.values
-ds_ucla_static.close()
+prism_lon_full = da_prism_sample['x'].values
+prism_lat_full = da_prism_sample['y'].values
 
 
 def in_bb(lon, lat):
@@ -182,141 +119,25 @@ def in_bb(lon, lat):
 
 
 def process_year(year):
-    """Processes all products for a single year and extracts daily percentiles (P95, P99) in their native grids."""
+    """Daily P95/P99 at every native grid cell, for one calendar year and every product.
+
+    Daily data come from common/prism_day.py (on the PRISM day when ALIGN is True),
+    cropped to BB. Missing days are left out of the percentiles.
+    """
     print(f"Processing Year: {year}...")
-    year_results = {}
-
-    # Initialize percentile maps
+    dates = pd.date_range(f"{year}-01-01", f"{year}-12-31", freq='D')
+    year_results = {prod: {p: None for p in PERCENTILES} for prod in PRODUCTS}
     for prod in PRODUCTS:
-        year_results[prod] = {p: None for p in PERCENTILES}
-        
-    # 1. PRISM (new TIFF/zip source)
-    try:
-        date_range = pd.date_range(f"{year}-01-01", f"{year}-12-31", freq='D')
-        daily_das = []
-        for d in date_range:
-            da_day = load_prism_day(d, PRISM_ROOT)
-            if da_day is not None:
-                da_day = da_day.where(da_day >= 0)
-                da_day = da_day.expand_dims(time=[d])
-                daily_das.append(da_day)
-        if daily_das:
-            da = xr.concat(daily_das, dim='time')
+        try:
+            da = prism_day.load_daily(PRODUCT_KEYS[prod], dates, align=ALIGN, crop=BB)
+            if da is None:
+                continue
             for p_name, p_value in PERCENTILES.items():
-                perc_s = da.quantile(p_value, dim='time').compute()
-                year_results['PRISM'][p_name] = perc_s
-    except Exception as e:
-        print(f"  [ERROR] PRISM {year}: {e}")
-
-    # 2. Daymet (new netCDF source)
-    try:
-        ds = load_daymet_from_netcdf(year, DAYMET_ROOT)
-        if ds is not None:
-            ds['time'] = pd.to_datetime(ds.time.values).normalize()
-            var = 'prcp' if 'prcp' in ds.data_vars else 'ppt'
-            for p_name, p_value in PERCENTILES.items():
-                perc_s = ds[var].quantile(p_value, dim='time').compute()
-                year_results['Daymet'][p_name] = perc_s
-            ds.close()
-    except Exception as e:
-        print(f"  [ERROR] Daymet {year}: {e}")
-        
-    # 3. PNNL WRF
-    try:
-        pnnl_file = os.path.join(PNNL_DIR, str(year), f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc")
-        if os.path.exists(pnnl_file):
-            ds = xr.open_dataset(pnnl_file, chunks={'time': 720})
-            da_daily = ds['PREC_ACC_NC'].resample(time='1D').sum()
-
-            # Crop PNNL WRF to Skagit bounding box
-            mask_crop = in_bb(pnnl_lon, pnnl_lat)
-            rows, cols = np.where(mask_crop)
-            row_min, row_max = rows.min(), rows.max()
-            col_min, col_max = cols.min(), cols.max()
-            da_daily = da_daily.isel(y=slice(row_min, row_max+1), x=slice(col_min, col_max+1))
-            pnnl_lat_cropped = pnnl_lat[row_min:row_max+1, col_min:col_max+1]
-            pnnl_lon_cropped = pnnl_lon[row_min:row_max+1, col_min:col_max+1]
-
-            for p_name, p_value in PERCENTILES.items():
-                perc_s = da_daily.quantile(p_value, dim='time').compute()
-                perc_s = perc_s.assign_coords(lat=(('y', 'x'), pnnl_lat_cropped), lon=(('y', 'x'), pnnl_lon_cropped))
-                year_results['PNNL'][p_name] = perc_s
-            ds.close()
-    except Exception as e:
-        print(f"  [ERROR] PNNL {year}: {e}")
-        
-    # 4. CONUS404
-    try:
-        ds = xr.open_zarr(CONUS_ZARR)
-
-        # Crop CONUS404 to Skagit bounding box
-        mask_crop = in_bb(ds.lon, ds.lat)
-        rows, cols = np.where(mask_crop.values)
-        if len(rows) > 0:
-            row_min, row_max = rows.min(), rows.max()
-            col_min, col_max = cols.min(), cols.max()
-            ds = ds.isel(y=slice(row_min, row_max+1), x=slice(col_min, col_max+1))
-            
-        ds_year = ds.sel(time=slice(f"{year}-01-01", f"{year}-12-31"))
-        for p_name, p_value in PERCENTILES.items():
-            perc_s = ds_year['precip_daily'].quantile(p_value, dim='time').compute()
-            year_results['CONUS404'][p_name] = perc_s
-        ds.close()
-    except Exception as e:
-        print(f"  [ERROR] CONUS404 {year}: {e}")
-        
-    # 5. UCLA (each file runs Sep to Aug, so a calendar year spans two files)
-    try:
-        u_path_prev = os.path.join(UCLA_PREC_DIR, f"prec.daily.era5.d02.{year-1}.nc")
-        u_path_curr = os.path.join(UCLA_PREC_DIR, f"prec.daily.era5.d02.{year}.nc")
-        da_parts = []
-        if os.path.exists(u_path_prev):
-            ds_prev = xr.open_dataset(u_path_prev)
-            u_var = "prec" if "prec" in ds_prev.data_vars else "pr"
-            da_part1 = ds_prev[u_var].sel(day=slice(f"{year}-01-01", f"{year}-08-31"))
-            da_parts.append(da_part1.compute())
-            ds_prev.close()
-        if os.path.exists(u_path_curr):
-            ds_curr = xr.open_dataset(u_path_curr)
-            u_var = "prec" if "prec" in ds_curr.data_vars else "pr"
-            da_part2 = ds_curr[u_var].sel(day=slice(f"{year}-09-01", f"{year}-12-31"))
-            da_parts.append(da_part2.compute())
-            ds_curr.close()
-            
-        if da_parts:
-            da_year = xr.concat(da_parts, dim='day')
-            
-            # Crop UCLA to Skagit bounding box
-            mask_crop = in_bb(ucla_lon, ucla_lat)
-            rows, cols = np.where(mask_crop)
-            row_min, row_max = rows.min(), rows.max()
-            col_min, col_max = cols.min(), cols.max()
-            da_year = da_year.isel(lat2d=slice(row_min, row_max+1), lon2d=slice(col_min, col_max+1))
-            ucla_lon_cropped = ucla_lon[row_min:row_max+1, col_min:col_max+1]
-            ucla_lat_cropped = ucla_lat[row_min:row_max+1, col_min:col_max+1]
-
-            for p_name, p_value in PERCENTILES.items():
-                perc_s = da_year.quantile(p_value, dim='day')
-                perc_s = perc_s.assign_coords(lat=(('lat2d', 'lon2d'), ucla_lat_cropped), lon=(('lat2d', 'lon2d'), ucla_lon_cropped))
-                year_results['UCLA'][p_name] = perc_s
-    except Exception as e:
-        print(f"  [ERROR] UCLA {year}: {e}")
-        
-    # 6. GridMET
-    try:
-        gridmet_path = os.path.join(GRIDMET_DIR, f"{year}_daily_4km_gridMET_data.zarr")
-        if os.path.exists(gridmet_path):
-            ds = xr.open_zarr(gridmet_path)
-            if 'day' in ds.dims:
-                ds = ds.rename({'day': 'time'})
-            for p_name, p_value in PERCENTILES.items():
-                perc_s = ds['prcp'].quantile(p_value, dim='time').compute()
-                year_results['GridMET'][p_name] = perc_s
-            ds.close()
-    except Exception as e:
-        print(f"  [ERROR] GridMET {year}: {e}")
-
+                year_results[prod][p_name] = da.quantile(p_value, dim='time').drop_vars('quantile')
+        except Exception as e:
+            print(f"  [ERROR] {prod} {year}: {e}")
     return year_results
+
 
 def align_coords(g, template):
     coords_dict = {}
@@ -387,13 +208,6 @@ def main():
     ref_lat = prism_lat_2d[row_min:row_max+1, col_min:col_max+1]
     print(f"Cropped PRISM 4km reference grid shape: {ref_lon.shape}")
     
-    # Pre-crop UCLA coordinates for regridding coordination
-    mask_crop_u = in_bb(ucla_lon, ucla_lat)
-    rows_u, cols_u = np.where(mask_crop_u)
-    row_min_u, row_max_u = rows_u.min(), rows_u.max()
-    col_min_u, col_max_u = cols_u.min(), cols_u.max()
-    ucla_lon_cropped = ucla_lon[row_min_u:row_max_u+1, col_min_u:col_max_u+1]
-    ucla_lat_cropped = ucla_lat[row_min_u:row_max_u+1, col_min_u:col_max_u+1]
 
     # Load GIS boundary files early for regridding/clipping
     boundary_gdf = gpd.read_file(BOUNDARY_PATH)
@@ -445,9 +259,7 @@ def main():
                             g_aligned = align_coords(g, template)
                             grids.append(g_aligned)
                         else:
-                            # Mismatched shape (e.g. Daymet 2012-2013)
-                            g_aligned = g.interp(lat=template.lat, lon=template.lon, method='linear')
-                            grids.append(g_aligned)
+                            raise ValueError(f"{prod}: grid shape {g.shape} differs from {template.shape}")
             if grids:
                 native_averages[prod][p_name] = xr.concat(grids, dim='year').mean(dim='year')
 
@@ -457,9 +269,6 @@ def main():
     for prod in products:
         for p_name in PERCENTILES:
             da_src = native_averages[prod][p_name]
-            if da_src is not None:
-                if prod == 'UCLA':
-                    da_src = da_src.assign_coords(lat=(('lat2d', 'lon2d'), ucla_lat_cropped), lon=(('lat2d', 'lon2d'), ucla_lon_cropped))
             regridded_averages[prod][p_name] = regrid_to_reference(da_src, ref_lat, ref_lon, mask_2d)
 
     # 4. Calculate differences relative to PRISM

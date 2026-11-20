@@ -2,9 +2,12 @@
 
 For 6 selected atmospheric river (AR) events, the cumulative precipitation of
 each product over an 8-day window (T-2 to T+5, where T is the AR event day)
-is computed from PRISM, Daymet, PNNL, CONUS404 (hourly), UCLA (hourly) and
-GridMET, regridded (linear) to the PRISM 4 km grid and masked to the Skagit
-watershed. The figure is a 6 x 5 grid of maps: one row per event and one
+is computed from PRISM, Daymet, PNNL, CONUS404, UCLA and GridMET, regridded
+(linear) to the PRISM 4 km grid and masked to the Skagit watershed
+(SkagitBoundary.json). Daily data come from common/prism_day.py; with ALIGN =
+True all products are on the PRISM day (12 UTC on D-1 to 12 UTC on D, GitHub
+issue #61). Cells without data stay blank (e.g. gridMET does not cover the
+Canadian part of the basin). The figure is a 6 x 5 grid of maps: one row per event and one
 column per product, showing the bias relative to PRISM (product - PRISM).
 SNOTEL station totals are overlaid as dots coloured by their own bias
 (SNOTEL - PRISM at the station). The colour range is symmetric, set by the
@@ -14,7 +17,7 @@ The basin-mean cumulative precipitation of each product and event is also
 written to a CSV.
 
 Input
-    /data0/skagit_met/data_transfer/data/...   (gridded and hourly products, outside this repository)
+    Precipitation datasets - see the paths in common/prism_day.py
     data/GIS/SkagitBoundary.json, data/GIS/SkagitSubBasin_HUC8.geojson
     data/weather_data/<start>_<end>_SNOTEL_daily_data.zarr   (one per event)
 Output
@@ -28,10 +31,7 @@ Usage
 import os
 import subprocess
 import sys
-import tempfile
 import warnings
-import zipfile
-from datetime import timedelta
 from pathlib import Path
 
 import cartopy.crs as ccrs
@@ -40,17 +40,16 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import rioxarray
 import xarray as xr
 from scipy.interpolate import griddata
+
+# Shared daily loaders (common/prism_day.py)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from common import prism_day  # noqa: E402
 
 warnings.filterwarnings('ignore')
 
 # --- Configuration & Paths ---
-# Shared raw-data archive (outside this repository)
-VAULT_DIR = "/data0/skagit_met/data_transfer/data"
-PRISM_ROOT = os.path.join(VAULT_DIR, "prism_new_hq")
-DAYMET_ROOT = os.path.join(VAULT_DIR, "daymet_new_hq")
 
 # Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -60,13 +59,6 @@ SUBBASIN_PATH = BASE_DIR / "data" / "GIS" / "SkagitSubBasin_HUC8.geojson"
 OUT_DIR = Path(__file__).resolve().parent / "plots"
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# Product locations in the archive
-PNNL_GEO = os.path.join(VAULT_DIR, "PNNL/SERDP6km.geo_em.d01.nc")  # PNNL grid coordinates
-PNNL_DIR = os.path.join(VAULT_DIR, "PNNL/historical")  # <year>/PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.<year>.nc
-UCLA_STATIC = os.path.join(VAULT_DIR, "ucla_era5_d02_daily/static/wrfinput_d02_coord.nc")  # UCLA grid coordinates
-CONUS_HOURLY_DIR = Path(VAULT_DIR) / "CONUS_hourly" / "hourly_ar_non_ar_events"
-UCLA_HOURLY_DIR = Path(VAULT_DIR) / "ucla_era5_d02_hourly" / "hourly_ar_non_ar_events"
-GRIDMET_DIR = os.path.join(VAULT_DIR, "gridmet")  # <year>_daily_4km_gridMET_data.zarr
 SNOTEL_DIR = DATA_DIR / "weather_data"  # <start>_<end>_SNOTEL_daily_data.zarr
 SNOTEL_DOWNLOADER = BASE_DIR / "downloaders" / "snotel_downloader.py"  # used only if a SNOTEL zarr is missing
 
@@ -97,6 +89,14 @@ FONT_CBAR_LABEL = 18
 FONT_CBAR_TICK = 16
 FONT_NA = 16
 
+# Day alignment of the products (GitHub issue #61): True = all products on the PRISM
+# day (12 UTC on D-1 to 12 UTC on D); False = each product's own date labels
+ALIGN = True
+
+# Product names used here -> names in common/prism_day.py
+PRODUCT_KEYS = {'PRISM': 'prism', 'Daymet': 'daymet', 'PNNL': 'pnnl',
+                'CONUS404': 'conus', 'UCLA': 'ucla', 'GridMET': 'gridmet'}
+
 # Crop bounding box: Skagit domain
 BB = (-122.5, -120.5, 47.8, 49.5)  # lon_min, lon_max, lat_min, lat_max
 MAP_EXTENT = [-122.35, -120.65, 47.90, 49.35]
@@ -110,99 +110,16 @@ def crop_rows_cols(lon2d, lat2d):
     rows, cols = np.where(m)
     return rows.min(), rows.max(), cols.min(), cols.max()
 
-def get_decade_folder(year: int) -> str:
-    if 2021 <= year <= 2024:
-        return "2021-2024"
-    start_decade = (year // 10) * 10
-    if start_decade == 1980 and year > 1980:
-        return "1981-1990"
-    if year % 10 == 0 and year > 1980:
-        return f"{start_decade-9}-{start_decade}"
-    if start_decade % 10 == 0:
-        return f"{start_decade+1}-{start_decade+10}"
-    return f"{start_decade}-{(year//10)*10+9}"
-
-
-def load_prism_day(date, prism_root):
-    """Load a single day of PRISM precipitation from the new TIFF/zip source.
-    Returns a DataArray with 1D 'lon'/'lat' coords (renamed from x/y), or None if missing."""
-    date_str = date.strftime('%Y%m%d')
-    year = date.year
-    decade_folder = get_decade_folder(year)
-    zip_path = os.path.join(prism_root, decade_folder, f"prism_ppt_us_25m_{date_str}.zip")
-
-    if not os.path.exists(zip_path):
-        return None
-
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(zip_path, 'r') as z:
-                z.extractall(tmpdir)
-                for root, dirs, files in os.walk(tmpdir):
-                    for f in files:
-                        if f.endswith('.tif'):
-                            filepath = os.path.join(root, f)
-                            da = rioxarray.open_rasterio(filepath)
-                            da = da.squeeze().copy(deep=True)
-                            da = da.rename({'x': 'lon', 'y': 'lat'})
-                            da.load()
-                            return da
-    except Exception as e:
-        print(f"  Error loading PRISM (new format) for {date_str}: {e}")
-
-    return None
-
-
-def load_daymet_from_netcdf(year, daymet_root):
-    """Load Daymet data from the new netCDF source for a specific year."""
-    daymet_nc_path = os.path.join(daymet_root, f"prcp_{year}_subset.nc")
-
-    if not os.path.exists(daymet_nc_path):
-        return None
-
-    try:
-        return xr.open_dataset(daymet_nc_path)
-    except Exception as e:
-        print(f"  Error loading Daymet netCDF for {year}: {e}")
-        return None
-
-# --- Load static coordinates once ---
-print("Loading static grid coordinates...")
-
-# Load PNNL 6km coordinates (for PNNL product, not reference)
-ds_pnnl_static = xr.open_dataset(PNNL_GEO)
-pnnl_lon_full = ds_pnnl_static.XLONG_M.values[0]
-pnnl_lat_full = ds_pnnl_static.XLAT_M.values[0]
-ds_pnnl_static.close()
-
-# Load PRISM reference grid (new TIFF/zip source)
+print("Loading reference grid...")
 prism_sample_date = pd.Timestamp("2020-01-01")
-da_prism_sample = load_prism_day(prism_sample_date, PRISM_ROOT)
-if da_prism_sample is not None:
-    prism_lon_full = da_prism_sample['lon'].values
-    prism_lat_full = da_prism_sample['lat'].values
-else:
+da_prism_sample = prism_day.load_prism_day(prism_sample_date)
+if da_prism_sample is None:
     raise FileNotFoundError(f"Could not find PRISM data for reference date {prism_sample_date.date()}")
-
-ds_ucla_static = xr.open_dataset(UCLA_STATIC)
-ucla_lon = ds_ucla_static.lon2d.values
-ucla_lat = ds_ucla_static.lat2d.values
-ds_ucla_static.close()
-
-# Crop reference PRISM grid
-if prism_lon_full.ndim == 1 and prism_lat_full.ndim == 1:
-    prism_lon_2d, prism_lat_2d = np.meshgrid(prism_lon_full, prism_lat_full)
-else:
-    prism_lon_2d, prism_lat_2d = prism_lon_full, prism_lat_full
+prism_lon_2d, prism_lat_2d = np.meshgrid(da_prism_sample['x'].values, da_prism_sample['y'].values)
 row_min_p, row_max_p, col_min_p, col_max_p = crop_rows_cols(prism_lon_2d, prism_lat_2d)
 ref_lon = prism_lon_2d[row_min_p:row_max_p+1, col_min_p:col_max_p+1]
 ref_lat = prism_lat_2d[row_min_p:row_max_p+1, col_min_p:col_max_p+1]
 print(f"Reference PRISM grid shape: {ref_lon.shape}")
-
-# Crop UCLA coordinate arrays
-row_min_u, row_max_u, col_min_u, col_max_u = crop_rows_cols(ucla_lon, ucla_lat)
-ucla_lon_c = ucla_lon[row_min_u:row_max_u+1, col_min_u:col_max_u+1]
-ucla_lat_c = ucla_lat[row_min_u:row_max_u+1, col_min_u:col_max_u+1]
 
 # Load GIS boundaries
 boundary_gdf = gpd.read_file(BOUNDARY_PATH)
@@ -254,146 +171,26 @@ def regrid_to_reference(da_src, mask_2d=None):
 
 
 def load_event_grids(event):
-    """Load daily-mean precipitation from each product for the event window."""
+    """Total precipitation of each product over the event window, on its native grid.
+
+    Daily data come from common/prism_day.py (on the PRISM day when ALIGN is True,
+    on each product's own date labels otherwise), cropped to BB. A product is left
+    out (drawn as N/A) unless every day of the window is available.
+    """
     start = event["start"]
     end   = event["end"]
-    year  = int(start[:4])
+    dates = pd.date_range(start, end, freq='D')
     print(f"\n  Loading data for {event['label']} ({start} → {end})...")
 
     grids = {p: None for p in PRODUCTS}
-
-    # 1. PRISM (new TIFF/zip source) - load each day and sum over the event window
-    try:
-        date_range = pd.date_range(start, end, freq='D')
-        daily_das = []
-        for d in date_range:
-            da_day = load_prism_day(d, PRISM_ROOT)
-            if da_day is not None:
-                da_day = da_day.where(da_day >= 0)  # mask nodata (e.g. -9999)
-                da_day = da_day.expand_dims(time=[d])
-                daily_das.append(da_day)
-        if daily_das:
-            da = xr.concat(daily_das, dim='time').sum(dim='time', skipna=False)
-            grids['PRISM'] = da
-            print(f"    PRISM OK ({len(daily_das)}/{len(date_range)} days)")
-        else:
-            print("    [WARN] PRISM: no daily files found for this window")
-    except Exception as e:
-        print(f"    [WARN] PRISM: {e}")
-
-    # 2. Daymet (new netCDF source)
-    try:
-        ds = load_daymet_from_netcdf(year, DAYMET_ROOT)
-        if ds is not None:
-            ds['time'] = pd.to_datetime(ds.time.values).normalize()
-            da = ds['prcp'].sel(time=slice(start, end)).sum(dim='time').compute()
-            grids['Daymet'] = da
-            ds.close()
-            print("    Daymet OK")
-        else:
-            print(f"    [WARN] Daymet: file not found for year {year}")
-    except Exception as e:
-        print(f"    [WARN] Daymet: {e}")
-
-    # 3. PNNL WRF
-    try:
-        pnnl_file = os.path.join(PNNL_DIR, str(year),
-                                 f"PNNL_WRF.HIST.CTRL.hourly.PREC_ACC_NC.{year}.nc")
-        if os.path.exists(pnnl_file):
-            ds = xr.open_dataset(pnnl_file, chunks={'time': 720})
-            da_daily = ds['PREC_ACC_NC'].resample(time='1D').sum()
-            # Crop
-            mask_c = bb_mask(pnnl_lon_full, pnnl_lat_full)
-            rows, cols = np.where(mask_c)
-            rm, rx, cm, cx = rows.min(), rows.max(), cols.min(), cols.max()
-            da_daily = da_daily.isel(x=slice(rm, rx+1), y=slice(cm, cx+1))
-            lat_c = pnnl_lat_full[rm:rx+1, cm:cx+1]
-            lon_c = pnnl_lon_full[rm:rx+1, cm:cx+1]
-            da = da_daily.sel(time=slice(start, end)).sum(dim='time').compute()
-            da = da.assign_coords(lat=(('x', 'y'), lat_c), lon=(('x', 'y'), lon_c))
-            grids['PNNL'] = da
-            ds.close()
-            print("    PNNL OK")
-    except Exception as e:
-        print(f"    [WARN] PNNL: {e}")
-
-    # 4. CONUS404 (hourly)
-    try:
-        conus_files_list = sorted(CONUS_HOURLY_DIR.glob('*.PREC_ACC_NC.wrf2d_d01_*.nc'))
-        conus_files_in_range = []
-        for f in conus_files_list:
-            try:
-                ds_temp = xr.open_dataset(f)
-                time = ds_temp.Time.values[0]
-                if pd.Timestamp(start) <= pd.Timestamp(time) <= pd.Timestamp(end):
-                    conus_files_in_range.append(f)
-                ds_temp.close()
-            except Exception:
-                pass
-
-        if conus_files_in_range:
-            ds_conus_list = [xr.open_dataset(f) for f in conus_files_in_range]
-            ds_conus = xr.concat(ds_conus_list, dim='Time')
-            da = ds_conus['PREC_ACC_NC'].sum(dim='Time', skipna=False).compute()
-            # Assign proper coordinate names for regridding (CONUS uses XLONG/XLAT with south_north/west_east dims)
-            da = da.assign_coords(lon=(('south_north', 'west_east'), ds_conus.XLONG.values),
-                                  lat=(('south_north', 'west_east'), ds_conus.XLAT.values))
-            grids['CONUS404'] = da
-            print("    CONUS404 OK")
-        else:
-            print("    [WARN] CONUS404: no hourly files found for this window")
-    except Exception as e:
-        print(f"    [WARN] CONUS404: {e}")
-
-    # 5. UCLA (hourly)
-    try:
-        # Generate list of hourly filenames in the event window (one extra hour
-        # before the start, since precipitation is the difference of accumulations)
-        date_start_ucla = pd.Timestamp(start) - timedelta(hours=1)
-        date_end = pd.Timestamp(end)
-        current = date_start_ucla
-        ucla_filenames = []
-        while current <= date_end:
-            fn = f"auxhist_d01_{current.strftime('%Y-%m-%d_%H:%M:%S')}.nc"
-            ucla_filenames.append(UCLA_HOURLY_DIR / fn)
-            current += timedelta(hours=1)
-
-        ucla_files_exist = [f for f in ucla_filenames if f.exists()]
-        if ucla_files_exist:
-            ds_ucla = xr.open_mfdataset(ucla_files_exist, concat_dim='Time', combine='nested')
-
-            # Calculate total rain and increments
-            total_rain_ucla = ds_ucla['RAINC'] + ds_ucla['RAINNC']
-            total_increments_ucla = total_rain_ucla.diff(dim='Time')
-
-            # Sum increments over the event window
-            da = total_increments_ucla.sum(dim='Time', skipna=False).compute()
-            da = da.isel(south_north=slice(row_min_u, row_max_u+1),
-                        west_east=slice(col_min_u, col_max_u+1))
-            da = da.assign_coords(lat=(('south_north', 'west_east'), ucla_lat_c),
-                                  lon=(('south_north', 'west_east'), ucla_lon_c))
-            grids['UCLA'] = da
-            ds_ucla.close()
-            print("    UCLA OK")
-        else:
-            print("    [WARN] UCLA: no hourly files found for this window")
-    except Exception as e:
-        print(f"    [WARN] UCLA: {e}")
-
-    # 6. GridMET
-    try:
-        gridmet_path = os.path.join(GRIDMET_DIR, f"{year}_daily_4km_gridMET_data.zarr")
-        if os.path.exists(gridmet_path):
-            ds = xr.open_zarr(gridmet_path)
-            if 'day' in ds.dims:
-                ds = ds.rename({'day': 'time'})
-            da = ds['prcp'].sel(time=slice(start, end)).sum(dim='time').compute()
-            grids['GridMET'] = da
-            ds.close()
-            print("    GridMET OK")
-    except Exception as e:
-        print(f"    [WARN] GridMET: {e}")
-
+    for prod in PRODUCTS:
+        da = prism_day.load_daily(PRODUCT_KEYS[prod], dates, align=ALIGN, crop=BB)
+        n_days = 0 if da is None else da.sizes['time']
+        if n_days < len(dates):
+            print(f"    [WARN] {prod}: {n_days}/{len(dates)} days available - left out")
+            continue
+        grids[prod] = da.sum(dim='time', skipna=False)
+        print(f"    {prod} OK ({n_days} days)")
     return grids
 
 
