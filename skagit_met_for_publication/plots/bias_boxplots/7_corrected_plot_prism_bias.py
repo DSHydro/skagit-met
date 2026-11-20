@@ -8,14 +8,16 @@ bias (product - PRISM) of five gridded products over 1981-2020:
     C) Bias by streamflow intensity (AR and non-AR events)
     D) Bias by PRISM precipitation intensity (AR and non-AR events)
 
-The 3-day window is the event day plus the two prior days. Boxes hide
+The 3-day window is the event day plus the two prior days (WINDOW = "3d"; set
+WINDOW = "7d" for the 7-day window). Precipitation classes use the PRISM total
+over the same window. Boxes hide
 outliers; product/bin combinations with fewer than 3 events are additionally
 drawn as individual points annotated with their count. X-axis tick labels
 report the number of unique events in each bin. All panels share a common
 y-axis range.
 
 Input
-    analysis/outputs/5day_taking_min_and_filling/5_prepared_bias_table.csv
+    analysis/outputs/<DATA_VARIANT>/5_prepared_bias_table.csv
 Output
     plots/bias_boxplots/plots/grouped_bias_3_metrics_2_periods.png
 
@@ -33,9 +35,18 @@ from matplotlib.patches import Patch
 
 # Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
 BASE_DIR = Path(__file__).resolve().parents[2]
-INPUT_CSV = BASE_DIR / "analysis" / "outputs" / "5day_taking_min_and_filling" / "5_prepared_bias_table.csv"
+# Event-table snapshot in analysis/outputs/: "5day_taking_min_and_filling" (product dates as labelled)
+# or "5day_taking_min_and_filling_prism_day" (all products on the PRISM day, 12-12 UTC; issue #61)
+DATA_VARIANT = "5day_taking_min_and_filling_prism_day"
+INPUT_CSV = BASE_DIR / "analysis" / "outputs" / DATA_VARIANT / "5_prepared_bias_table.csv"
 OUT_DIR = BASE_DIR / "plots" / "bias_boxplots" / "plots"
 OUT_IMG = OUT_DIR / "grouped_bias_3_metrics_2_periods.png"
+
+# Accumulation window of the bias and of the PRISM precipitation classes:
+# "3d" (event day + 2 prior days) or "7d" (event day + 6 prior days)
+WINDOW = "3d"
+WINDOW_TEXT = {"3d": ("3-Day", "the day of the event and the prior 2 days"),
+               "7d": ("7-Day", "the day of the event and the prior 6 days")}
 
 # Analysis settings
 START_YEAR, END_YEAR = 1981, 2020
@@ -82,6 +93,11 @@ def plot_prism_bias():
     print("Loading prepared bias table...")
     df = pd.read_csv(INPUT_CSV)
     df["date"] = pd.to_datetime(df["date"])
+
+    # For the 3-day window, use the 3-day bias and class columns under the standard names.
+    if WINDOW == "3d":
+        df = df.drop(columns=PRODUCTS + ["Precipitation Bucket (mm)"]).rename(
+            columns={**{f"{p}_3d": p for p in PRODUCTS}, "Precipitation Bucket 3d (mm)": "Precipitation Bucket (mm)"})
 
     # Keep only valid AR scale values.
     df = df.dropna(subset=["ar_scale"])
@@ -164,11 +180,12 @@ def plot_prism_bias():
 
     plot_panel(axes[0, 1], period1[period1["ar_scale"] == 0], "Precipitation Bucket (mm)", custom_sort_precipitation)
     axes[0, 1].set_title("B) Bias by PRISM Precipitation Intensity\nNon-AR Events", weight="bold")
-    axes[0, 1].set_xlabel("PRISM 3-Day Total Precipitation Range (mm)", labelpad=8)
+    win_label, win_desc = WINDOW_TEXT[WINDOW]
+    axes[0, 1].set_xlabel(f"PRISM {win_label} Total Precipitation Range (mm)", labelpad=8)
 
     plot_panel(axes[1, 1], period1, "Precipitation Bucket (mm)", custom_sort_precipitation)
     axes[1, 1].set_title("D) Bias by PRISM Precipitation Intensity\nAR and Non-AR Events", weight="bold")
-    axes[1, 1].set_xlabel("PRISM 3-Day Total Precipitation Range (mm)", labelpad=8)
+    axes[1, 1].set_xlabel(f"PRISM {win_label} Total Precipitation Range (mm)", labelpad=8)
 
     # One shared legend for the whole figure instead of one per panel.
     handles = [Patch(facecolor=PALETTE[p], edgecolor=PALETTE[p], label=p) for p in PRODUCTS]
@@ -179,8 +196,8 @@ def plot_prism_bias():
     for ax in axes.flat:
         ax.get_legend().remove()
 
-    plt.suptitle(f"Cross-Product Precipitation Bias Analysis: {START_YEAR}-{END_YEAR}\n(Product - PRISM 3-Day Total)", fontsize=FONT_SUPTITLE, weight="bold", y=1.05)
-    fig.text(0.5, 0.95, "3-day window computed as: the day of the event and the prior 2 days", ha="center", fontsize=FONT_SUBTITLE, color="dimgray")
+    plt.suptitle(f"Cross-Product Precipitation Bias Analysis: {START_YEAR}-{END_YEAR}\n(Product - PRISM {win_label} Total)", fontsize=FONT_SUPTITLE, weight="bold", y=1.05)
+    fig.text(0.5, 0.95, f"{win_label.lower()} window computed as: {win_desc}", ha="center", fontsize=FONT_SUBTITLE, color="dimgray")
 
     plt.tight_layout(rect=[0, 0, 1, 0.97])
 

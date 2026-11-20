@@ -37,7 +37,10 @@ from matplotlib.patches import Patch
 
 # Paths are resolved relative to this file: <repo>/skagit_met_for_publication/
 BASE_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = BASE_DIR / "analysis" / "outputs" / "5day_taking_min_and_filling"
+# Event-table snapshot in analysis/outputs/: "5day_taking_min_and_filling" (product dates as labelled)
+# or "5day_taking_min_and_filling_prism_day" (all products on the PRISM day, 12-12 UTC; issue #61)
+DATA_VARIANT = "5day_taking_min_and_filling_prism_day"
+DATA_DIR = BASE_DIR / "analysis" / "outputs" / DATA_VARIANT
 BIAS_CSV = DATA_DIR / "5_prepared_bias_table.csv"
 PRIOR_EVENTS_CSV = DATA_DIR / "3.5_events_with_prior_counts.csv"
 OUT_DIR = BASE_DIR / "plots" / "bias_boxplots" / "plots" / "prior_events"
