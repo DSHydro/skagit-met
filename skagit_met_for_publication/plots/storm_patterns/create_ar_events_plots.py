@@ -83,25 +83,18 @@ def load_usgs_rdb(filepath, param_name):
         print(f"  Error loading {filepath}: {e}")
         return pd.DataFrame(columns=['date', param_name])
 
-# USGS daily values are means over the local calendar day (Pacific Standard Time, UTC-8),
-# while the precipitation axis is in UTC: local day D runs from D 08:00 to D+1 08:00 UTC.
-USGS_DAY_START_UTC = pd.Timedelta(hours=8)
+def discharge_points(df, start, end):
+    """Daily mean discharge plotted at 00:00 of its date, for dates in [start, end].
 
-
-def discharge_steps(df, start, end):
-    """Daily mean discharge as a step line spanning each local day, on the UTC time axis.
-
-    Returns (x, y) for ``ax.step(x, y, where='post')``, clipped to [start, end], or
-    (None, None) if no daily value overlaps the window.
+    Same convention as the analysis (steps 1-5), which pairs discharge with events by
+    date label, not by time. Note: USGS daily values are means over the local (PST)
+    calendar day, so on this UTC axis each value is drawn about 20 h before the middle
+    of the day it describes (see GitHub issue #61). Returns (x, y) or (None, None).
     """
-    start, end = pd.Timestamp(start), pd.Timestamp(end)
-    day_start = df['date'] + USGS_DAY_START_UTC
-    d = df[(day_start + pd.Timedelta(days=1) > start) & (day_start < end)]
+    d = df[(df['date'] >= pd.Timestamp(start)) & (df['date'] <= pd.Timestamp(end))]
     if d.empty:
         return None, None
-    x = list((d['date'] + USGS_DAY_START_UTC).clip(lower=start)) + [end]
-    y = list(d['discharge_cms']) + [d['discharge_cms'].iloc[-1]]
-    return x, y
+    return list(d['date']), list(d['discharge_cms'])
 
 
 def fill_missing_times(times, values):
@@ -228,10 +221,10 @@ for idx, (date_start_ucla, date_start, date_end, event_date, ar_category) in enu
 
     # Create secondary y-axis for discharge
     ax2 = ax.twinx()
-    q_x, q_y = discharge_steps(df_discharge_all, date_start, date_end + timedelta(hours=1))
+    q_x, q_y = discharge_points(df_discharge_all, date_start, date_end + timedelta(hours=1))
 
     if q_x is not None:
-        ax2.step(q_x, q_y, where='post',
+        ax2.plot(q_x, q_y,
                 linewidth=2.5, color=COLOR_DISCHARGE, label='USGS Discharge (cms)', alpha=0.7)
         ax2.set_ylabel('Discharge (cms)', fontsize=FONT_LABEL, fontweight='bold', color=COLOR_DISCHARGE)
         ax2.tick_params(axis='y', labelcolor=COLOR_DISCHARGE, labelsize=FONT_TICK)
@@ -282,7 +275,7 @@ for idx, (date_start_ucla, date_start, date_end, event_date, ar_category) in enu
     # Create secondary y-axis for discharge
     ax2_2 = ax2.twinx()
     if q_x is not None:
-        ax2_2.step(q_x, q_y, where='post',
+        ax2_2.plot(q_x, q_y,
                   linewidth=2.5, color=COLOR_DISCHARGE, label='USGS Discharge (cms)', alpha=0.7)
         ax2_2.set_ylabel('Discharge (cms)', fontsize=FONT_LABEL, fontweight='bold', color=COLOR_DISCHARGE)
         ax2_2.tick_params(axis='y', labelcolor=COLOR_DISCHARGE, labelsize=FONT_TICK)
