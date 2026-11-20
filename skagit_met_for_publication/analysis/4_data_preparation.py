@@ -3,7 +3,7 @@
 Steps:
 1. Load the event table from script 3.5.
 2. Keep only the columns in KEEP_COLS (date, AR scale, discharge and the
-   precipitation totals of each product).
+   3-day and 7-day precipitation totals of each product).
 3. Drop events without a PRISM 7-day total (PRISM is the reference product).
 
 Input (in ``<BASE_DIR>/analysis/outputs``):
@@ -42,6 +42,11 @@ KEEP_COLS = [
     "conus_7d_tot",
     "ucla_7d_tot",
     "gridmet_7d_tot",
+    "daymet_3d_tot",
+    "pnnl_3d_tot",
+    "conus_3d_tot",
+    "ucla_3d_tot",
+    "gridmet_3d_tot",
 ]
 
 
